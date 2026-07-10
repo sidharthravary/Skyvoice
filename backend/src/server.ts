@@ -1,0 +1,136 @@
+import path from 'path';
+import dotenv from 'dotenv';
+// Use __dirname-based absolute path so this works regardless of which
+// directory `npm run dev` is invoked from (not CWD-relative).
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import { connectDatabase } from './config/database';
+import { connectRedis } from './config/redis';
+import { errorHandler } from './middleware/errorHandler';
+import { rateLimiter } from './middleware/rateLimiter';
+
+// Route imports
+import conversationRoutes from './routes/conversations';
+import appointmentRoutes from './routes/appointments';
+import inquiryRoutes from './routes/inquiries';
+import knowledgeRoutes from './routes/knowledge';
+import analyticsRoutes from './routes/analytics';
+import calendarRoutes from './routes/calendar';
+import configRoutes from './routes/config';
+import monitoringRoutes from './routes/monitoring';
+import authRoutes from './routes/auth';
+import userRoutes from './routes/users';
+import { setupVoicePipeline } from './services/voicePipeline';
+import { initMediasoup } from './webrtc/mediasoupServer';
+
+// ── Startup env diagnostics ──
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3010';
+const PORT        = process.env.PORT          || 3011;
+
+// Support comma-separated list of allowed origins (e.g. localhost + LAN IP for phone access)
+const corsOrigins: string | string[] = FRONTEND_URL.includes(',')
+  ? FRONTEND_URL.split(',').map(o => o.trim())
+  : FRONTEND_URL;
+
+console.log(`[Env] FRONTEND_URL : ${FRONTEND_URL}`);
+console.log(`[Env] PORT         : ${PORT}`);
+console.log(`[Env] MONGODB_URI  : ${(process.env.MONGODB_URI || '').replace(/:([^:@]+)@/, ':***@') || '(not set)'}`);
+console.log(`[Env] CORS origins : ${JSON.stringify(corsOrigins)}`);
+
+const app    = express();
+const server = http.createServer(app);
+
+// ── Socket.io ──
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: corsOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
+
+// ── Middleware ──
+app.use(helmet());
+app.use(cors({
+  origin: corsOrigins,
+  credentials: true,
+}));
+app.use(morgan('dev'));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(rateLimiter);
+
+// ── Health Check ──
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status:    'healthy',
+    service:   'SkyVoice API',
+    timestamp: new Date().toISOString(),
+    uptime:    process.uptime(),
+  });
+});
+
+// ── API Routes ──
+app.use('/api/auth',          authRoutes);
+app.use('/api/users',         userRoutes);
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/appointments',  appointmentRoutes);
+app.use('/api/inquiries',     inquiryRoutes);
+app.use('/api/knowledge',     knowledgeRoutes);
+app.use('/api/analytics',     analyticsRoutes);
+app.use('/api/calendar',      calendarRoutes);
+app.use('/api/config',        configRoutes);
+app.use('/api/monitoring',    monitoringRoutes);
+
+// ── Socket.io general namespace ──
+io.on('connection', (socket) => {
+  console.log(`[Socket.io] General namespace: ${socket.id}`);
+  socket.on('disconnect', () => {
+    console.log(`[Socket.io] General disconnect: ${socket.id}`);
+  });
+});
+
+// ── Socket.io /monitoring namespace (receives webrtc_stats from voice pipeline) ──
+io.of('/monitoring').on('connection', (socket) => {
+  console.log(`[Socket.io] Monitoring client connected: ${socket.id}`);
+  socket.on('disconnect', () => {
+    console.log(`[Socket.io] Monitoring client disconnected: ${socket.id}`);
+  });
+});
+
+setupVoicePipeline(io);
+
+// ── Error Handler (must be last) ──
+app.use(errorHandler);
+
+// ── Start Server ──
+async function start() {
+  // Start mediasoup and HTTP server first — these don't need the database
+  await initMediasoup();
+
+  server.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`\n🚀 SkyVoice API running on http://localhost:${PORT}`);
+    console.log(`✅ Backend listening on 0.0.0.0:${PORT} — reachable on LAN at http://192.168.1.104:${PORT}`);
+    console.log(`🔌 Socket.io ready — CORS origins: ${JSON.stringify(corsOrigins)}`);
+    console.log(`📊 Health check: http://localhost:${PORT}/api/health\n`);
+  });
+
+  // Database and Redis connect in parallel — errors are logged but don't kill the server
+  connectDatabase().catch((err) => {
+    console.error('❌ MongoDB connection failed (voice pipeline will handle DB errors per-request):', err.message ?? err);
+  });
+
+  connectRedis().catch((err) => {
+    console.error('❌ Redis connection failed (caching disabled):', err.message ?? err);
+  });
+}
+
+start();
+
+export { app, server, io };

@@ -1,0 +1,20 @@
+{
+  "name": "skyvoice-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SKYVION AI Voice Operations Platform — Enterprise-grade voice-to-voice AI assistant",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm -w frontend run dev",
+    "dev:backend": "npm -w backend run dev",
+    "build": "npm -w frontend run build && npm -w backend run build",
+    "lint": "npm -w frontend run lint && npm -w backend run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

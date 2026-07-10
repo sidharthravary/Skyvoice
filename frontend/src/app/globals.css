@@ -1,0 +1,316 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────
+   SKYVION DESIGN SYSTEM — CSS Custom Properties
+   ───────────────────────────────────────────── */
+
+:root {
+  /* Primary Palette */
+  --sky-primary: #4F7DF3;
+  --sky-primary-light: #6FAEFF;
+  --sky-accent: #7DB7FF;
+  --sky-navy: #0F172A;
+  --sky-navy-light: #1E293B;
+  --sky-bg: #F5F9FF;
+  --sky-bg-dark: #0A0F1C;
+
+  /* Glass */
+  --sky-glass: rgba(255, 255, 255, 0.65);
+  --sky-glass-border: rgba(255, 255, 255, 0.18);
+  --sky-glass-dark: rgba(15, 23, 42, 0.65);
+  --sky-glass-dark-border: rgba(79, 125, 243, 0.15);
+
+  /* Gradients */
+  --sky-gradient: linear-gradient(135deg, #4F7DF3, #6FAEFF);
+  --sky-gradient-dark: linear-gradient(135deg, #0F172A, #1E293B);
+  --sky-gradient-glow: linear-gradient(135deg, rgba(79, 125, 243, 0.3), rgba(111, 174, 255, 0.1));
+  --sky-gradient-radial: radial-gradient(circle at 50% 50%, rgba(79, 125, 243, 0.15), transparent 70%);
+
+  /* Shadows */
+  --sky-shadow-sm: 0 2px 8px rgba(79, 125, 243, 0.08);
+  --sky-shadow-md: 0 4px 20px rgba(79, 125, 243, 0.12);
+  --sky-shadow-lg: 0 8px 40px rgba(79, 125, 243, 0.18);
+  --sky-shadow-glow: 0 0 30px rgba(79, 125, 243, 0.25);
+  --sky-shadow-orb: 0 0 60px rgba(79, 125, 243, 0.4), 0 0 120px rgba(111, 174, 255, 0.2);
+
+  /* Text */
+  --sky-text-primary: #0F172A;
+  --sky-text-secondary: #475569;
+  --sky-text-muted: #94A3B8;
+  --sky-text-on-dark: #F1F5F9;
+  --sky-text-on-primary: #FFFFFF;
+
+  /* Status */
+  --sky-success: #22C55E;
+  --sky-warning: #F59E0B;
+  --sky-error: #EF4444;
+  --sky-info: #3B82F6;
+
+  /* Spacing */
+  --sky-radius-sm: 8px;
+  --sky-radius-md: 12px;
+  --sky-radius-lg: 20px;
+  --sky-radius-xl: 28px;
+  --sky-radius-full: 9999px;
+
+  /* Transitions */
+  --sky-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --sky-transition-slow: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─────────────────────────────────────────────
+   BASE STYLES
+   ───────────────────────────────────────────── */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', 'Geist', system-ui, -apple-system, sans-serif;
+  background: var(--sky-bg);
+  color: var(--sky-text-primary);
+  overflow-x: hidden;
+}
+
+/* ─────────────────────────────────────────────
+   GLASS MORPHISM
+   ───────────────────────────────────────────── */
+
+.glass {
+  background: var(--sky-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--sky-glass-border);
+  border-radius: var(--sky-radius-lg);
+}
+
+.glass-dark {
+  background: var(--sky-glass-dark);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--sky-glass-dark-border);
+  border-radius: var(--sky-radius-lg);
+}
+
+/* ─────────────────────────────────────────────
+   GLOW EFFECTS
+   ───────────────────────────────────────────── */
+
+.glow {
+  box-shadow: var(--sky-shadow-glow);
+}
+
+.glow-text {
+  text-shadow: 0 0 20px rgba(79, 125, 243, 0.5);
+}
+
+.neon-border {
+  position: relative;
+}
+
+.neon-border::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--sky-gradient);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.neon-border:hover::after {
+  opacity: 1;
+}
+
+/* ─────────────────────────────────────────────
+   GRID OVERLAY BACKGROUND
+   ───────────────────────────────────────────── */
+
+.grid-overlay {
+  position: relative;
+}
+
+.grid-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(79, 125, 243, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 125, 243, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─────────────────────────────────────────────
+   KEYFRAME ANIMATIONS
+   ───────────────────────────────────────────── */
+
+/* AI Orb Pulse */
+@keyframes orbPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 40px rgba(79, 125, 243, 0.3), 0 0 80px rgba(111, 174, 255, 0.15);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 60px rgba(79, 125, 243, 0.5), 0 0 120px rgba(111, 174, 255, 0.25);
+  }
+}
+
+/* AI Orb Listening (rapid pulse) */
+@keyframes orbListening {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 50px rgba(79, 125, 243, 0.5), 0 0 100px rgba(111, 174, 255, 0.3);
+  }
+  25% {
+    transform: scale(1.08);
+  }
+  75% {
+    transform: scale(0.97);
+  }
+}
+
+/* AI Orb Speaking (wave effect) */
+@keyframes orbSpeaking {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 60px rgba(79, 125, 243, 0.6), 0 0 120px rgba(111, 174, 255, 0.3);
+  }
+  33% {
+    transform: scale(1.1);
+    box-shadow: 0 0 80px rgba(79, 125, 243, 0.7), 0 0 160px rgba(111, 174, 255, 0.4);
+  }
+  66% {
+    transform: scale(0.95);
+  }
+}
+
+/* Orbital Float */
+@keyframes orbitalFloat {
+  0% { transform: rotate(0deg) translateX(140px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(140px) rotate(-360deg); }
+}
+
+/* Gentle Float */
+@keyframes gentleFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Fade In Up */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Spin Slow */
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Ring Pulse */
+@keyframes ringPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+/* Shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ─────────────────────────────────────────────
+   ANIMATION UTILITY CLASSES
+   ───────────────────────────────────────────── */
+
+.animate-orb-pulse {
+  animation: orbPulse 3s ease-in-out infinite;
+}
+
+.animate-orb-listening {
+  animation: orbListening 1s ease-in-out infinite;
+}
+
+.animate-orb-speaking {
+  animation: orbSpeaking 1.5s ease-in-out infinite;
+}
+
+.animate-orbital {
+  animation: orbitalFloat 20s linear infinite;
+}
+
+.animate-float {
+  animation: gentleFloat 4s ease-in-out infinite;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-spin-slow {
+  animation: spinSlow 30s linear infinite;
+}
+
+.animate-ring-pulse {
+  animation: ringPulse 2s ease-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(79, 125, 243, 0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* ─────────────────────────────────────────────
+   SCROLLBAR
+   ───────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(79, 125, 243, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(79, 125, 243, 0.5);
+}
+
+/* ─────────────────────────────────────────────
+   DARK MODE OVERRIDES (dashboard)
+   ───────────────────────────────────────────── */
+
+.dark {
+  --sky-text-primary: #F1F5F9;
+  --sky-text-secondary: #94A3B8;
+  --sky-text-muted: #64748B;
+  background: var(--sky-bg-dark);
+}

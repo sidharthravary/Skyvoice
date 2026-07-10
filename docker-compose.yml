@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # ── MongoDB ──
+  mongodb:
+    image: mongo:7
+    container_name: skyvoice-mongodb
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: skyvoice
+
+  # ── Redis ──
+  redis:
+    image: redis:7-alpine
+    container_name: skyvoice-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongodb_data:
+  redis_data:
