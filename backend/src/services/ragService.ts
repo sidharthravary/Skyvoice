@@ -1,12 +1,50 @@
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import { OpenAI } from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { KnowledgeBase } from '../models/knowledgeBase.model';
+
+// ── Embedding providers (priority: OpenAI → Gemini → deterministic mock) ──────
 
 const openaiApiKey = process.env.OPENAI_API_KEY;
 let openai: OpenAI | null = null;
-if (openaiApiKey && !openaiApiKey.includes('your-openai-api-key')) {
+if (
+  openaiApiKey &&
+  !openaiApiKey.includes('your-openai-api-key') &&
+  !openaiApiKey.includes('placeholder')
+) {
   openai = new OpenAI({ apiKey: openaiApiKey });
+}
+
+let geminiEmbedder: ReturnType<GoogleGenerativeAI['getGenerativeModel']> | null = null;
+{
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey && !geminiKey.includes('your-gemini') && !geminiKey.includes('placeholder')) {
+    try {
+      geminiEmbedder = new GoogleGenerativeAI(geminiKey).getGenerativeModel({
+        model: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
+      });
+    } catch (err) {
+      console.warn('[RAG] Gemini embedder init failed:', err);
+    }
+  }
+}
+
+export type EmbeddingProvider = 'openai' | 'gemini' | 'mock';
+
+export function embeddingProviderInfo(): { provider: EmbeddingProvider } {
+  if (openai) return { provider: 'openai' };
+  if (geminiEmbedder) return { provider: 'gemini' };
+  return { provider: 'mock' };
+}
+
+// Embedding dimensionality varies by provider/model — probe once with a real call.
+let probedDims: number | null = null;
+async function getEmbeddingDims(): Promise<number> {
+  if (probedDims === null) {
+    probedDims = (await generateEmbedding('dimension probe')).length;
+  }
+  return probedDims;
 }
 
 // Simple text chunker
@@ -22,7 +60,7 @@ export function chunkText(text: string, chunkSize = 500, overlap = 100): string[
   return chunks;
 }
 
-// Generate embedding helper (returns a mock vector of 1536 float elements if OpenAI key is missing)
+// Generate embedding (OpenAI → Gemini → deterministic mock for offline dev)
 export async function generateEmbedding(text: string): Promise<number[]> {
   if (openai) {
     try {
@@ -32,14 +70,23 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       });
       return response.data[0].embedding;
     } catch (error) {
-      console.error('[RAG] OpenAI Embedding failed, falling back to mock:', error);
+      console.error('[RAG] OpenAI embedding failed, trying Gemini:', error);
+    }
+  }
+
+  if (geminiEmbedder) {
+    try {
+      const result = await geminiEmbedder.embedContent(text.slice(0, 9000));
+      const values = result.embedding?.values;
+      if (Array.isArray(values) && values.length > 0) return values;
+    } catch (error) {
+      console.error('[RAG] Gemini embedding failed, falling back to mock:', error);
     }
   }
 
   // Fallback: stable deterministic pseudo-random embedding vector for localhost testing
   const vector: number[] = new Array(1536).fill(0);
   for (let i = 0; i < 1536; i++) {
-    // Generate a pseudo-random value based on the text string and index
     let hash = 0;
     const key = text + i;
     for (let j = 0; j < key.length; j++) {
@@ -48,32 +95,157 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     }
     vector[i] = (hash % 1000) / 1000.0;
   }
-  
-  // Normalize vector
   const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
   return vector.map(v => v / (magnitude || 1));
 }
 
-// Search Pinecone or fallback to MongoDB search
+// ── Atlas Vector Search index (best-effort, created once at first use) ────────
+
+// Index name is suffixed with the dimensionality so switching embedding
+// providers can't leave a mismatched index silently breaking $vectorSearch.
+let vectorIndexName: string | null = null;
+let vectorIndexEnsured = false;
+let vectorIndexAvailable = false;
+
+export async function ensureVectorIndex(): Promise<string | null> {
+  if (vectorIndexEnsured) return vectorIndexAvailable ? vectorIndexName : null;
+  vectorIndexEnsured = true;
+
+  const { provider } = embeddingProviderInfo();
+  if (provider === 'mock') return null; // meaningless without real embeddings
+
+  try {
+    const dims = await getEmbeddingDims();
+    vectorIndexName = `knowledge_vector_${dims}`;
+
+    const collection = KnowledgeBase.collection;
+    const existing = await collection.listSearchIndexes().toArray().catch(() => []);
+    if (existing.some((idx: { name?: string }) => idx.name === vectorIndexName)) {
+      vectorIndexAvailable = true;
+      return vectorIndexName;
+    }
+
+    await collection.createSearchIndex({
+      name: vectorIndexName,
+      type: 'vectorSearch',
+      definition: {
+        fields: [
+          { type: 'vector', path: 'embedding', numDimensions: dims, similarity: 'cosine' },
+        ],
+      },
+    });
+    console.log(`[RAG] ✅ Created Atlas vector index "${vectorIndexName}" (${dims} dims, ${provider})`);
+    vectorIndexAvailable = true;
+    return vectorIndexName;
+  } catch (err) {
+    console.warn(
+      '[RAG] Atlas vector index unavailable (falling back to in-memory cosine):',
+      (err as Error)?.message ?? err
+    );
+    vectorIndexAvailable = false;
+    return null;
+  }
+}
+
+// ── Semantic search helpers ────────────────────────────────────────────────────
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+async function vectorSearchAtlas(
+  indexName: string,
+  queryVector: number[],
+  limit: number
+): Promise<Array<{ title: string; content: string; score: number }> | null> {
+  try {
+    const results = await KnowledgeBase.aggregate([
+      {
+        $vectorSearch: {
+          index: indexName,
+          path: 'embedding',
+          queryVector,
+          numCandidates: Math.max(limit * 20, 100),
+          limit,
+        },
+      },
+      {
+        $project: {
+          title: 1,
+          content: 1,
+          score: { $meta: 'vectorSearchScore' },
+        },
+      },
+    ]);
+    if (!Array.isArray(results) || results.length === 0) return null;
+    return results.map(r => ({ title: r.title, content: r.content, score: r.score ?? 0.9 }));
+  } catch (err) {
+    console.warn('[RAG] $vectorSearch failed, using in-memory cosine:', (err as Error)?.message ?? err);
+    return null;
+  }
+}
+
+async function vectorSearchInMemory(
+  queryVector: number[],
+  limit: number
+): Promise<Array<{ title: string; content: string; score: number }>> {
+  // Fine for small/medium knowledge bases; avoids requiring an Atlas index.
+  const docs = await KnowledgeBase.find(
+    { embedding: { $exists: true, $type: 'array', $ne: [] } },
+    { title: 1, content: 1, embedding: 1 }
+  ).lean();
+
+  return docs
+    .filter(d => Array.isArray(d.embedding) && d.embedding.length === queryVector.length)
+    .map(d => ({
+      title: d.title as string,
+      content: d.content as string,
+      score: cosineSimilarity(queryVector, d.embedding as number[]),
+    }))
+    .filter(r => r.score > 0.4)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+// ── Search: vector first, keyword fallback ─────────────────────────────────────
+
 export async function searchKnowledge(query: string, limit = 5): Promise<Array<{ title: string; content: string; score: number }>> {
   console.log(`[RAG] Searching knowledge base for: "${query}"`);
-  
-  // If we have OpenAI and Pinecone config, we can run Pinecone search
-  const pineconeApiKey = process.env.PINECONE_API_KEY;
-  if (openai && pineconeApiKey && !pineconeApiKey.includes('your-pinecone-api-key')) {
+
+  // 1) Semantic vector search (only meaningful with a real embedding provider)
+  const { provider } = embeddingProviderInfo();
+  if (provider !== 'mock') {
     try {
       const queryVector = await generateEmbedding(query);
-      // Run Pinecone search
-      // Note: For simplicity and out-of-the-box local operation, we also query MongoDB
-      // in parallel or as fallback. Let's show MongoDB text search first.
+
+      const indexName = await ensureVectorIndex();
+      if (indexName) {
+        const atlasResults = await vectorSearchAtlas(indexName, queryVector, limit);
+        if (atlasResults && atlasResults.length > 0) {
+          console.log(`[RAG] ✅ ${atlasResults.length} hits via Atlas $vectorSearch`);
+          return atlasResults;
+        }
+      }
+
+      const cosineResults = await vectorSearchInMemory(queryVector, limit);
+      if (cosineResults.length > 0) {
+        console.log(`[RAG] ✅ ${cosineResults.length} hits via in-memory cosine (${provider} embeddings)`);
+        return cosineResults;
+      }
     } catch (err) {
-      console.error('[RAG] Pinecone search failed:', err);
+      console.error('[RAG] Vector search error, falling back to keywords:', err);
     }
   }
 
-  // MongoDB Search (either text index or matching)
+  // 2) Keyword fallback (text index → regex → defaults)
   try {
-    // Perform regex/text search on KnowledgeBase collection
     const entries = await KnowledgeBase.find(
       { $text: { $search: query } },
       { score: { $meta: 'textScore' } }
@@ -89,7 +261,6 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Array<{
       }));
     }
 
-    // Fallback: keyword inclusion if text index returns nothing
     const keywords = query.toLowerCase().split(/\s+/).filter(k => k.length > 2);
     if (keywords.length > 0) {
       const regexFilters = keywords.map(kw => ({
@@ -98,7 +269,7 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Array<{
           { content: { $regex: kw, $options: 'i' } }
         ]
       }));
-      
+
       const regexEntries = await KnowledgeBase.find({ $and: regexFilters }).limit(limit);
       if (regexEntries.length > 0) {
         return regexEntries.map(entry => ({
@@ -109,7 +280,6 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Array<{
       }
     }
 
-    // Return any FAQ/mock answers if DB is completely empty
     const count = await KnowledgeBase.countDocuments();
     if (count === 0) {
       return [
@@ -121,7 +291,6 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Array<{
       ];
     }
 
-    // Otherwise, return first few documents
     const allDocs = await KnowledgeBase.find().limit(limit);
     return allDocs.map(entry => ({
       title: entry.title,
@@ -142,7 +311,7 @@ export async function ingestDocument(
 ): Promise<{ text: string; chunks: string[]; status: 'success' | 'error' }> {
   try {
     let text = '';
-    
+
     if (mimeType === 'application/pdf') {
       const parsed = await pdfParse(buffer);
       text = parsed.text;
@@ -165,14 +334,16 @@ export async function ingestDocument(
 
     // Ingest chunks into DB
     for (let i = 0; i < chunks.length; i++) {
-      const chunkText = chunks[i];
-      const embedding = await generateEmbedding(chunkText);
+      const chunk = chunks[i];
+      const embedding = await generateEmbedding(chunk);
 
       await KnowledgeBase.create({
         title: `${title} (Part ${i + 1})`,
-        content: chunkText,
+        content: chunk,
         embedding,
         sourceType: mimeType.includes('pdf') ? 'pdf' : 'docx',
+        chunkIndex: i,
+        totalChunks: chunks.length,
         indexStatus: 'indexed',
       });
     }

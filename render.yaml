@@ -1,0 +1,23 @@
+# Render blueprint — deploys the SkyVoice backend.
+# In the Render dashboard: New → Blueprint → point it at this repository.
+services:
+  - type: web
+    name: skyvoice-backend
+    runtime: node
+    plan: free # free tier sleeps after 15 min idle (~50s cold start); upgrade to avoid
+    buildCommand: npm install && npm run build -w backend
+    startCommand: node backend/dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false # paste your Atlas connection string in the dashboard
+      - key: GEMINI_API_KEY
+        sync: false # paste your Gemini key in the dashboard
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong random secret
+      - key: FRONTEND_URL
+        sync: false # set to your Vercel URL, e.g. https://skyvoice.vercel.app

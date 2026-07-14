@@ -26,6 +26,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  themeColor: "#0F172A",
+  viewportFit: "cover", // draw edge-to-edge when installed on notched phones
 };
 
 export const metadata: Metadata = {
@@ -43,6 +45,17 @@ export const metadata: Metadata = {
     "customer support AI",
   ],
   authors: [{ name: "Skyvion Tech" }],
+  // PWA / Add-to-Home-Screen
+  applicationName: "SkyVoice",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "SkyVoice",
+  },
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export default function RootLayout({

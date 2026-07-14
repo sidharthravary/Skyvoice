@@ -134,14 +134,15 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
   }
 });
 
-// POST /api/knowledge/retrain — Trigger re-embedding
+// POST /api/knowledge/retrain — Re-embed every entry with the active provider
+// (also migrates entries whose embeddings came from a different provider/dims)
 router.post('/retrain', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const pendingEntries = await KnowledgeBase.find({ indexStatus: 'pending' });
-    
+    const allEntries = await KnowledgeBase.find();
+
     // Retrain in background
     (async () => {
-      for (const entry of pendingEntries) {
+      for (const entry of allEntries) {
         try {
           const embedding = await generateEmbedding(`${entry.title} ${entry.content}`);
           await KnowledgeBase.findByIdAndUpdate(entry._id, {
