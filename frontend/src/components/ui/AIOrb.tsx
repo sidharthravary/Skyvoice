@@ -203,9 +203,14 @@ export function AIOrb({
       </motion.button>
 
       {/* State label */}
-      <p className="absolute -bottom-2 text-sm font-medium text-[#4F7DF3] tracking-wide">
+      <motion.p
+        key={state}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="absolute -bottom-2 text-sm font-medium text-[#4F7DF3] tracking-wide"
+      >
         {stateLabels[state]}
-      </p>
+      </motion.p>
     </div>
   );
 }

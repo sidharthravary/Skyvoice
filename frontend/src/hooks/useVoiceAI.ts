@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { OrbState } from "@/components/ui/AIOrb";
 import { getToken, getUsername, getFullName } from "@/lib/auth";
+import { getBackendUrl } from "@/lib/backend";
 
 // ── Feature flag: set to false to force the existing Socket.io/browser-speech path ──
-const WEBRTC_ENABLED = true;
+// Disabled — the original (video-verified) flow uses browser speech + Socket.io.
+const WEBRTC_ENABLED = false;
 
 export function useVoiceAI() {
   const [orbState, setOrbState] = useState<OrbState>("idle");
@@ -39,7 +41,7 @@ export function useVoiceAI() {
 
   // Load config from backend on mount
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+    const backendUrl = getBackendUrl();
     fetch(`${backendUrl}/api/config`)
       .then((res) => res.json())
       .then((data) => {
@@ -53,7 +55,7 @@ export function useVoiceAI() {
 
   // Initialize Socket.io connection
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+    const socketUrl = getBackendUrl();
     const socket = io(`${socketUrl}/voice`, {
       transports: ["websocket", "polling"],
       reconnectionAttempts: 5,

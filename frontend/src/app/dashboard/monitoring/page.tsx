@@ -1,5 +1,7 @@
 "use client";
 
+import { getBackendUrl } from "@/lib/backend";
+
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { io } from "socket.io-client";
@@ -52,7 +54,7 @@ export default function MonitoringPage() {
   const [callQuality, setCallQuality] = useState<WebRTCStats | null>(null);
 
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+    const backendUrl = getBackendUrl();
     const socket = io(`${backendUrl}/monitoring`, {
       transports: ["websocket"],
     });

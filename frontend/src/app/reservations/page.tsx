@@ -1,5 +1,7 @@
 "use client";
 
+import { getBackendUrl } from "@/lib/backend";
+
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GuestNav } from "@/components/ui/GuestNav";
@@ -11,7 +13,7 @@ import {
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+const BACKEND = getBackendUrl();
 
 interface Appointment {
   _id: string;

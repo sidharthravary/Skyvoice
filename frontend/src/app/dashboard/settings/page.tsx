@@ -1,5 +1,7 @@
 "use client";
 
+import { getBackendUrl } from "@/lib/backend";
+
 import { motion } from "framer-motion";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useState, useEffect, useRef } from "react";
@@ -45,7 +47,7 @@ export default function SettingsPage() {
 
   // Load config and voices
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+    const backendUrl = getBackendUrl();
     
     // Load config from backend
     fetch(`${backendUrl}/api/config`)
@@ -142,7 +144,7 @@ export default function SettingsPage() {
   const saveChanges = async () => {
     setIsSaving(true);
     setSaveStatus("idle");
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+    const backendUrl = getBackendUrl();
     
     try {
       const res = await fetch(`${backendUrl}/api/config`, {

@@ -40,3 +40,7 @@ coverage/
 
 # Misc
 *.log
+
+# dev TLS material (regenerate with openssl; see scripts/https-proxy.js)
+scripts/skyvoice-dev.key
+scripts/skyvoice-dev.crt

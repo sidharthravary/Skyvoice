@@ -1,5 +1,7 @@
 "use client";
 
+import { getBackendUrl } from "@/lib/backend";
+
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -180,7 +182,7 @@ export default function ConversationsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+  const backendUrl = getBackendUrl();
 
   // Helper to parse MongoDB Conversation into UI Conversation format
   const mapDBConversationToUI = (db: any): UIConversation => {

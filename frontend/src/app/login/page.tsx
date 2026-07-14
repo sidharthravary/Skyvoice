@@ -1,12 +1,14 @@
 "use client";
 
+import { getBackendUrl } from "@/lib/backend";
+
 import { useState, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Bot, Eye, EyeOff, Loader2 } from "lucide-react";
 import { setAuth } from "@/lib/auth";
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3011";
+const BACKEND = getBackendUrl();
 
 type Tab = "signin" | "signup";
 

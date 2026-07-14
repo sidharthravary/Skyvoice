@@ -1,4 +1,5 @@
 import path from 'path';
+import os from 'os';
 import dotenv from 'dotenv';
 // Use __dirname-based absolute path so this works regardless of which
 // directory `npm run dev` is invoked from (not CWD-relative).
@@ -33,10 +34,14 @@ import { initMediasoup } from './webrtc/mediasoupServer';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3010';
 const PORT        = process.env.PORT          || 3011;
 
-// Support comma-separated list of allowed origins (e.g. localhost + LAN IP for phone access)
-const corsOrigins: string | string[] = FRONTEND_URL.includes(',')
-  ? FRONTEND_URL.split(',').map(o => o.trim())
-  : FRONTEND_URL;
+// Support comma-separated list of allowed origins (e.g. localhost + LAN IP for phone access).
+// In development, reflect any origin so the app works from any LAN IP without editing .env.
+const corsOrigins: boolean | string | string[] =
+  process.env.NODE_ENV !== 'production'
+    ? true
+    : FRONTEND_URL.includes(',')
+      ? FRONTEND_URL.split(',').map(o => o.trim())
+      : FRONTEND_URL;
 
 console.log(`[Env] FRONTEND_URL : ${FRONTEND_URL}`);
 console.log(`[Env] PORT         : ${PORT}`);
@@ -111,12 +116,22 @@ app.use(errorHandler);
 
 // ── Start Server ──
 async function start() {
-  // Start mediasoup and HTTP server first — these don't need the database
-  await initMediasoup();
+  // Mediasoup (WebRTC) is optional — the voice flow runs over Socket.io + browser
+  // speech. Never let a mediasoup failure keep the server from starting.
+  try {
+    await initMediasoup();
+  } catch (err) {
+    console.warn('⚠️ Mediasoup init failed — WebRTC disabled, Socket.io voice path unaffected:', (err as Error)?.message ?? err);
+  }
 
   server.listen(Number(PORT), '0.0.0.0', () => {
+    const nets = os.networkInterfaces();
+    const lanIps = Object.values(nets)
+      .flat()
+      .filter((n): n is os.NetworkInterfaceInfo => !!n && n.family === 'IPv4' && !n.internal)
+      .map((n) => n.address);
     console.log(`\n🚀 SkyVoice API running on http://localhost:${PORT}`);
-    console.log(`✅ Backend listening on 0.0.0.0:${PORT} — reachable on LAN at http://192.168.1.104:${PORT}`);
+    console.log(`✅ Backend listening on 0.0.0.0:${PORT}${lanIps.length ? ` — reachable on LAN at ${lanIps.map((ip) => `http://${ip}:${PORT}`).join(', ')}` : ''}`);
     console.log(`🔌 Socket.io ready — CORS origins: ${JSON.stringify(corsOrigins)}`);
     console.log(`📊 Health check: http://localhost:${PORT}/api/health\n`);
   });
