@@ -49,6 +49,7 @@ export default function LoginPage() {
       const res = await fetch(`${BACKEND}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", // receive the HttpOnly auth cookie
         body: JSON.stringify({ username: siUsername.trim(), password: siPassword }),
       });
       const data = await res.json();
@@ -56,7 +57,7 @@ export default function LoginPage() {
         setSiError(data.message || "Login failed. Please try again.");
         return;
       }
-      setAuth(data.token, data.role, data.username, data.fullName);
+      setAuth(data.role, data.username, data.fullName);
       router.push(data.role === "admin" ? "/dashboard" : "/voice");
     } catch {
       setSiError("Could not reach the server. Please check your connection.");
@@ -80,6 +81,7 @@ export default function LoginPage() {
       const res = await fetch(`${BACKEND}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", // receive the HttpOnly auth cookie
         body: JSON.stringify({
           fullName: suFullName.trim(),
           username: suUsername.trim(),
@@ -95,7 +97,7 @@ export default function LoginPage() {
         else setSuError(msg);
         return;
       }
-      setAuth(data.token, data.role, data.username, data.fullName);
+      setAuth(data.role, data.username, data.fullName);
       router.push("/voice");
     } catch {
       setSuError("Could not reach the server. Please check your connection.");

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { OrbState } from "@/components/ui/AIOrb";
-import { getToken, getUsername, getFullName } from "@/lib/auth";
+import { getUsername, getFullName } from "@/lib/auth";
 import { getBackendUrl } from "@/lib/backend";
 
 // ── Feature flag: set to false to force the existing Socket.io/browser-speech path ──
@@ -59,8 +59,10 @@ export function useVoiceAI() {
     const socket = io(`${socketUrl}/voice`, {
       transports: ["websocket", "polling"],
       reconnectionAttempts: 5,
+      // The JWT rides along as an HttpOnly cookie on the handshake;
+      // only display names are passed explicitly.
+      withCredentials: true,
       auth: {
-        token:    getToken()    || 'guest',
         username: getUsername() || 'Guest',
         fullName: getFullName() || 'Guest',
       },

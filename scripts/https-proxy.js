@@ -38,7 +38,9 @@ const server = https.createServer(tlsOptions, (req, res) => {
       port: targetPortFor(req.url),
       path: req.url,
       method: req.method,
-      headers: req.headers,
+      // Tell the backend the client connection is HTTPS so auth cookies
+      // get the Secure attribute.
+      headers: { ...req.headers, 'x-forwarded-proto': 'https' },
     },
     (proxyRes) => {
       res.writeHead(proxyRes.statusCode, proxyRes.headers);

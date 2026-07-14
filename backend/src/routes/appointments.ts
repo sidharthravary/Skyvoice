@@ -1,19 +1,15 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
 import { Appointment } from '../models/appointment.model';
 import { ApiError } from '../middleware/errorHandler';
+import { getTokenFromRequest, verifyToken } from '../middleware/auth';
 
 const router = Router();
 
 function parseOptionalAuth(req: Request): { userId?: string; role?: string } {
   try {
-    const header = req.headers.authorization;
-    if (!header?.startsWith('Bearer ')) return {};
-    const token = header.slice(7);
-    const payload = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'skyvoice-dev-local-secret-key-12345'
-    ) as { userId: string; role: string };
+    const token = getTokenFromRequest(req);
+    if (!token) return {};
+    const payload = verifyToken(token);
     return { userId: payload.userId, role: payload.role };
   } catch {
     return {};

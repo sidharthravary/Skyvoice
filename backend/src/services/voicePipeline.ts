@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { parseCookies } from '../middleware/auth';
 import { searchKnowledge } from './ragService';
 import { getAvailableSlots, parseNaturalDate, parseNaturalTime } from './calendarService';
 import { ProjectInquiry } from '../models/projectInquiry.model';
@@ -78,7 +79,9 @@ function decodeSocketAuth(socket: Socket): { userId: string; username: string; f
   const fullName = auth?.fullName || username;
 
   try {
-    const token = auth?.token;
+    // The JWT lives in an HttpOnly cookie (sent with the handshake); the
+    // handshake auth field remains as a fallback for non-browser clients.
+    const token = parseCookies(socket.handshake.headers.cookie)['skyvoice_token'] || auth?.token;
     if (token) {
       const payload = jwt.verify(
         token,

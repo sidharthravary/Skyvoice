@@ -5,7 +5,7 @@ import { getBackendUrl } from "@/lib/backend";
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GuestNav } from "@/components/ui/GuestNav";
-import { getToken } from "@/lib/auth";
+import { isLoggedIn } from "@/lib/auth";
 import {
   CalendarDays, Clock, CheckCircle, XCircle, AlertCircle,
   Bot, Mic, RefreshCw,
@@ -63,11 +63,10 @@ export default function ReservationsPage() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const fetchAppointments = useCallback(async () => {
-    const token = getToken();
-    if (!token) { router.replace("/login"); return; }
+    if (!isLoggedIn()) { router.replace("/login"); return; }
     try {
       const res = await fetch(`${BACKEND}/api/appointments?limit=100`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include", // auth travels as an HttpOnly cookie
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
@@ -98,10 +97,10 @@ export default function ReservationsPage() {
     setCancellingId(id);
     setConfirmId(null);
     try {
-      const token = getToken();
       const res = await fetch(`${BACKEND}/api/appointments/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ status: "cancelled" }),
       });
       if (res.ok) {

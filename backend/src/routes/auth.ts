@@ -5,6 +5,12 @@ import { User } from '../models/user.model';
 import { ApiError } from '../middleware/errorHandler';
 import { rateLimiter } from '../middleware/rateLimiter';
 import { trackLogin } from '../services/userSessionService';
+import {
+  setAuthCookies,
+  clearAuthCookies,
+  getTokenFromRequest,
+  verifyToken,
+} from '../middleware/auth';
 
 const router = Router();
 
@@ -50,22 +56,23 @@ router.post('/login', rateLimiter, async (req: Request, res: Response, next: Nex
 
       trackLogin(userId, adminUser.username, fullName).catch(() => {});
 
+      setAuthCookies(req, res, token, { role: adminUser.role, username: adminUser.username, fullName });
       return res.json({
-        success: true, token, role: adminUser.role,
+        success: true, role: adminUser.role,
         username: adminUser.username, fullName,
       });
     }
 
-    // ── Visitor auto-register / login ──────────────────────────────────────────
-    let visitor = await User.findOne({ username });
+    // ── Visitor login — existing accounts only (registration is /register) ─────
+    const visitor = await User.findOne({ username });
 
     if (!visitor) {
-      const hash = await bcrypt.hash(password, 10);
-      visitor = await User.create({ username, passwordHash: hash, role: 'visitor' });
-    } else {
-      const isMatch = await bcrypt.compare(password, visitor.passwordHash);
-      if (!isMatch) throw new ApiError(401, 'Invalid credentials');
+      // Same message as a wrong password so usernames can't be probed.
+      throw new ApiError(401, 'Invalid username or password');
     }
+
+    const isMatch = await bcrypt.compare(password, visitor.passwordHash);
+    if (!isMatch) throw new ApiError(401, 'Invalid username or password');
 
     visitor.lastLogin = new Date();
     visitor.loginHistory.push({ timestamp: new Date(), ip });
@@ -77,8 +84,9 @@ router.post('/login', rateLimiter, async (req: Request, res: Response, next: Nex
 
     trackLogin(userId, visitor.username, fullName).catch(() => {});
 
+    setAuthCookies(req, res, token, { role: visitor.role, username: visitor.username, fullName });
     return res.json({
-      success: true, token, role: visitor.role,
+      success: true, role: visitor.role,
       username: visitor.username, fullName,
     });
   } catch (error) {
@@ -124,8 +132,9 @@ router.post('/register', rateLimiter, async (req: Request, res: Response, next: 
 
     trackLogin(userId, user.username, resolvedFullName).catch(() => {});
 
+    setAuthCookies(req, res, token, { role: user.role, username: user.username, fullName: resolvedFullName });
     return res.status(201).json({
-      success: true, token, role: user.role,
+      success: true, role: user.role,
       username: user.username, fullName: resolvedFullName,
     });
   } catch (error) {
@@ -133,23 +142,21 @@ router.post('/register', rateLimiter, async (req: Request, res: Response, next: 
   }
 });
 
-// POST /api/auth/logout
+// POST /api/auth/logout — clears the HttpOnly auth cookie (JS can't)
 router.post('/logout', (_req: Request, res: Response) => {
+  clearAuthCookies(res);
   res.json({ success: true });
 });
 
 // GET /api/auth/me
 router.get('/me', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) throw new ApiError(401, 'No token provided');
+    const token = getTokenFromRequest(req);
+    if (!token) throw new ApiError(401, 'No token provided');
 
-    const token = authHeader.slice(7);
     let payload: { userId: string; username: string; role: string };
     try {
-      payload = jwt.verify(
-        token, process.env.JWT_SECRET || 'skyvoice-dev-local-secret-key-12345'
-      ) as any;
+      payload = verifyToken(token);
     } catch {
       throw new ApiError(401, 'Invalid or expired token');
     }
