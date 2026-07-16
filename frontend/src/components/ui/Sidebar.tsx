@@ -15,11 +15,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Bot,
+  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/dashboard", label: "Command Center", icon: LayoutDashboard },
+  { href: "/dashboard/chat", label: "Chat", icon: Sparkles },
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/conversations", label: "Conversations", icon: MessageSquare },
   { href: "/dashboard/knowledge", label: "Knowledge Base", icon: BookOpen },

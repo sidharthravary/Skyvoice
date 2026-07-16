@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, LogOut, Mic, CalendarDays } from "lucide-react";
+import { Bot, LogOut, Mic, CalendarDays, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout, getUsername } from "@/lib/auth";
@@ -17,6 +17,7 @@ export function GuestNav() {
 
   const links = [
     { href: "/voice",        label: "Voice AI",        icon: Mic },
+    { href: "/chat",         label: "Chat",            icon: MessageSquare },
     { href: "/reservations", label: "My Reservations", icon: CalendarDays },
   ];
 
