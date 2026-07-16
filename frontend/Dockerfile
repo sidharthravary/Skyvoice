@@ -1,21 +1,19 @@
-# Build Stage
-FROM node:20-alpine AS builder
+# Build from the repository root (docker compose sets context: .)
+FROM node:20 AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
+COPY package.json package-lock.json ./
+COPY backend/package.json backend/
+COPY frontend/package.json frontend/
+RUN npm ci -w frontend
+COPY frontend frontend
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN npm run build -w frontend
 
-# Production Stage
-FROM node:20-alpine
-WORKDIR /app
+FROM node:20
+WORKDIR /app/frontend
 ENV NODE_ENV=production
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
-EXPOSE 3000
-CMD ["npm", "run", "start"]
+COPY --from=builder /app/node_modules /app/node_modules
+COPY --from=builder /app/package.json /app/package.json
+COPY --from=builder /app/frontend ./
+EXPOSE 3010
+CMD ["npx", "next", "start", "-p", "3010", "-H", "0.0.0.0"]

@@ -11,8 +11,27 @@ import {
   getTokenFromRequest,
   verifyToken,
 } from '../middleware/auth';
+import { validateBody } from '../middleware/validate';
+import { z } from 'zod';
 
 const router = Router();
+
+const loginSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required').max(64),
+  password: z.string().min(1, 'Password is required').max(128),
+});
+
+const registerSchema = z.object({
+  fullName: z.string().trim().max(100).optional(),
+  username: z
+    .string()
+    .trim()
+    .min(3, 'Username must be at least 3 characters')
+    .max(32)
+    .regex(/^[a-zA-Z0-9_.-]+$/, 'Username may only contain letters, numbers, dots, dashes and underscores'),
+  email: z.string().trim().email('Invalid email address').max(254),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(128),
+});
 
 function signToken(userId: string, username: string, role: string): string {
   return jwt.sign(
@@ -23,13 +42,9 @@ function signToken(userId: string, username: string, role: string): string {
 }
 
 // POST /api/auth/login
-router.post('/login', rateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', rateLimiter, validateBody(loginSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { username, password } = req.body;
-
-    if (!username || !password) {
-      throw new ApiError(400, 'Username and password are required');
-    }
 
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
             || req.socket.remoteAddress
@@ -95,16 +110,10 @@ router.post('/login', rateLimiter, async (req: Request, res: Response, next: Nex
 });
 
 // POST /api/auth/register
-router.post('/register', rateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/register', rateLimiter, validateBody(registerSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { fullName, username, email, password } = req.body;
 
-    if (!username || !email || !password) {
-      throw new ApiError(400, 'Username, email, and password are required');
-    }
-    if (password.length < 8) {
-      throw new ApiError(400, 'Password must be at least 8 characters');
-    }
     if (username === 'Admin') {
       throw new ApiError(400, 'That username is reserved');
     }

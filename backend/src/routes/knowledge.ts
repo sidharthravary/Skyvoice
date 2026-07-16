@@ -3,6 +3,17 @@ import multer from 'multer';
 import { KnowledgeBase } from '../models/knowledgeBase.model';
 import { ApiError } from '../middleware/errorHandler';
 import { ingestDocument, searchKnowledge, generateEmbedding } from '../services/ragService';
+import { validateBody } from '../middleware/validate';
+import { z } from 'zod';
+
+const faqSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(300),
+  content: z.string().trim().min(1, 'Content is required').max(5000),
+});
+
+const searchSchema = z.object({
+  query: z.string().trim().min(1, 'Search query is required').max(500),
+});
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -88,10 +99,9 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 });
 
 // POST /api/knowledge/faq — Add FAQ entry
-router.post('/faq', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/faq', validateBody(faqSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { title, content } = req.body;
-    if (!title || !content) throw new ApiError(400, 'Title and content are required');
 
     const embedding = await generateEmbedding(`${title} ${content}`);
 
@@ -110,10 +120,9 @@ router.post('/faq', async (req: Request, res: Response, next: NextFunction) => {
 });
 
 // POST /api/knowledge/search — Semantic search
-router.post('/search', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/search', validateBody(searchSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { query } = req.body;
-    if (!query) throw new ApiError(400, 'Search query is required');
 
     const results = await searchKnowledge(query);
     res.json({ success: true, data: results });

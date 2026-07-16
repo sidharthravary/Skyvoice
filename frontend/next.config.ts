@@ -1,6 +1,11 @@
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Monorepo root (silences the multiple-lockfile inference warning)
+  turbopack: {
+    root: path.join(__dirname, ".."),
+  },
   // Allow the dev server to be used from other devices on the LAN
   // (phone on the same Wi-Fi). Without this, Next.js blocks cross-origin
   // dev asset requests and the app never hydrates on the phone.

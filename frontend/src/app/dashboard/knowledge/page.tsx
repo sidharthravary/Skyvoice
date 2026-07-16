@@ -64,7 +64,6 @@ export default function KnowledgePage() {
   const [faqSubmitting, setFaqSubmitting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const BACKEND = getBackendUrl();
 
   const fetchEntries = useCallback(async () => {
@@ -73,11 +72,6 @@ export default function KnowledgePage() {
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setEntries(data.data);
-        // Keep refreshing while anything is still being indexed
-        if (data.data.some((e: KnowledgeEntry) => e.indexStatus === "pending")) {
-          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-          pollTimerRef.current = setTimeout(fetchEntries, 3000);
-        }
       }
     } catch (err) {
       console.error("[Knowledge] Failed to fetch entries:", err);
@@ -88,10 +82,14 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     fetchEntries();
-    return () => {
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    };
   }, [fetchEntries]);
+
+  // Keep refreshing while anything is still being indexed
+  useEffect(() => {
+    if (!entries.some((e) => e.indexStatus === "pending")) return;
+    const timer = setTimeout(fetchEntries, 3000);
+    return () => clearTimeout(timer);
+  }, [entries, fetchEntries]);
 
   // ── Upload ────────────────────────────────────────────────────────────────
 
