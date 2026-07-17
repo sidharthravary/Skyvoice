@@ -65,7 +65,7 @@ interface UserSession {
     budget?: string;
     timeline?: string;
   };
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp?: Date }>;
 }
 
 const sessions:      Map<string, UserSession> = new Map();
@@ -316,7 +316,7 @@ export function setupVoicePipeline(io: Server) {
       fullName,
       bookingForm: {},
       inquiryForm: {},
-      messages: [{ role: 'assistant', content: greeting }],
+      messages: [{ role: 'assistant', content: greeting, timestamp: new Date() }],
     });
 
     const useBrowserAssist = !openai;
@@ -348,7 +348,7 @@ export function setupVoicePipeline(io: Server) {
         return;
       }
 
-      session.messages.push({ role: 'user', content: text });
+      session.messages.push({ role: 'user', content: text, timestamp: new Date() });
       socket.emit('transcript', { sender: 'user', text });
       socket.emit('status', 'thinking');
 
@@ -366,7 +366,7 @@ export function setupVoicePipeline(io: Server) {
         clearTimeout(watchdog);
 
         console.log(`[Voice Pipeline] ✅ Response: "${response.substring(0, 80)}..."`);
-        session.messages.push({ role: 'assistant', content: response });
+        session.messages.push({ role: 'assistant', content: response, timestamp: new Date() });
         socket.emit('ai-response-text', response);
         socket.emit('status', 'speaking');
 

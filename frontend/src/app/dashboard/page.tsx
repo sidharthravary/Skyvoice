@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { getBackendUrl } from "@/lib/backend";
 import { AIOrb } from "@/components/ui/AIOrb";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { StatsCard } from "@/components/ui/StatsCard";
@@ -29,6 +31,28 @@ const floatingFeatures = [
   { label: "Real-Time AI", icon: Zap },
 ];
 
+interface LiveStats {
+  activeConversations: number;
+  bookingSuccessRate: number;
+  satisfactionScore: number;
+  totalQueries: number;
+  activeUsers: number;
+  averageResponseTime: string | null;
+  trends: {
+    conversations: number | null;
+    bookings: number | null;
+    queries: number | null;
+    users: number | null;
+    satisfaction: number | null;
+  };
+}
+
+// Only render a trend chip when the backend had real prior-week data
+function liveTrend(value: number | null | undefined) {
+  if (typeof value !== "number" || value === 0) return undefined;
+  return { value: Math.abs(value), positive: value > 0 };
+}
+
 export default function CommandCenter() {
   const {
     orbState,
@@ -36,6 +60,15 @@ export default function CommandCenter() {
     aiText,
     toggleVoiceSession,
   } = useVoiceAI();
+
+  const [stats, setStats] = useState<LiveStats | null>(null);
+
+  useEffect(() => {
+    fetch(`${getBackendUrl()}/api/analytics`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setStats(d.data); })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -180,39 +213,38 @@ export default function CommandCenter() {
       >
         <StatsCard
           label="Active Conversations"
-          value={24}
+          value={stats ? stats.activeConversations.toLocaleString() : "—"}
           icon={MessageSquare}
-          trend={{ value: 12, positive: true }}
+          trend={liveTrend(stats?.trends.conversations)}
         />
         <StatsCard
           label="Booking Success"
-          value="87%"
+          value={stats ? `${stats.bookingSuccessRate}%` : "—"}
           icon={CalendarCheck}
-          trend={{ value: 5, positive: true }}
+          trend={liveTrend(stats?.trends.bookings)}
         />
         <StatsCard
           label="AI Satisfaction"
-          value="94%"
+          value={stats ? `${stats.satisfactionScore}%` : "—"}
           icon={Smile}
-          trend={{ value: 3, positive: true }}
+          trend={liveTrend(stats?.trends.satisfaction)}
         />
         <StatsCard
           label="Total Queries"
-          value="1,842"
+          value={stats ? stats.totalQueries.toLocaleString() : "—"}
           icon={HelpCircle}
-          trend={{ value: 8, positive: true }}
+          trend={liveTrend(stats?.trends.queries)}
         />
         <StatsCard
           label="Response Time"
-          value="1.2s"
+          value={stats?.averageResponseTime ?? "—"}
           icon={Timer}
-          trend={{ value: 15, positive: true }}
         />
         <StatsCard
           label="Active Users"
-          value={156}
+          value={stats ? stats.activeUsers.toLocaleString() : "—"}
           icon={Users}
-          trend={{ value: 22, positive: true }}
+          trend={liveTrend(stats?.trends.users)}
         />
       </motion.div>
     </div>
