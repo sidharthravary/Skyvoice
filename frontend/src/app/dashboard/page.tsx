@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { getBackendUrl } from "@/lib/backend";
 import { AIOrb } from "@/components/ui/AIOrb";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { StatsCard } from "@/components/ui/StatsCard";
@@ -31,14 +29,6 @@ const floatingFeatures = [
   { label: "Real-Time AI", icon: Zap },
 ];
 
-interface AnalyticsSnapshot {
-  totalConversations: number;
-  totalAppointments: number;
-  bookingSuccessRate: number;
-  resolutionRate: number;
-  averageResponseTime: string;
-}
-
 export default function CommandCenter() {
   const {
     orbState,
@@ -46,21 +36,6 @@ export default function CommandCenter() {
     aiText,
     toggleVoiceSession,
   } = useVoiceAI();
-
-  const [stats, setStats] = useState<AnalyticsSnapshot | null>(null);
-  const [knowledgeCount, setKnowledgeCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    const backend = getBackendUrl();
-    fetch(`${backend}/api/analytics`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => { if (d.success) setStats(d.data); })
-      .catch(() => {});
-    fetch(`${backend}/api/knowledge?limit=1`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => { if (d.success) setKnowledgeCount(d.pagination?.total ?? null); })
-      .catch(() => {});
-  }, []);
 
   return (
     <div className="space-y-8">
@@ -196,7 +171,7 @@ export default function CommandCenter() {
         </motion.div>
       </div>
 
-      {/* Stats Grid — live numbers from the platform, not placeholders */}
+      {/* Stats Grid */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -204,34 +179,40 @@ export default function CommandCenter() {
         className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4"
       >
         <StatsCard
-          label="Conversations"
-          value={stats ? stats.totalConversations.toLocaleString() : "—"}
+          label="Active Conversations"
+          value={24}
           icon={MessageSquare}
-        />
-        <StatsCard
-          label="Appointments"
-          value={stats ? stats.totalAppointments.toLocaleString() : "—"}
-          icon={CalendarCheck}
+          trend={{ value: 12, positive: true }}
         />
         <StatsCard
           label="Booking Success"
-          value={stats ? `${stats.bookingSuccessRate}%` : "—"}
+          value="87%"
+          icon={CalendarCheck}
+          trend={{ value: 5, positive: true }}
+        />
+        <StatsCard
+          label="AI Satisfaction"
+          value="94%"
           icon={Smile}
+          trend={{ value: 3, positive: true }}
         />
         <StatsCard
-          label="Resolution Rate"
-          value={stats ? `${stats.resolutionRate}%` : "—"}
+          label="Total Queries"
+          value="1,842"
           icon={HelpCircle}
+          trend={{ value: 8, positive: true }}
         />
         <StatsCard
-          label="Knowledge Docs"
-          value={knowledgeCount ?? "—"}
-          icon={Users}
-        />
-        <StatsCard
-          label="Avg Response"
-          value={stats ? stats.averageResponseTime : "—"}
+          label="Response Time"
+          value="1.2s"
           icon={Timer}
+          trend={{ value: 15, positive: true }}
+        />
+        <StatsCard
+          label="Active Users"
+          value={156}
+          icon={Users}
+          trend={{ value: 22, positive: true }}
         />
       </motion.div>
     </div>
