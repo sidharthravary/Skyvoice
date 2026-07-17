@@ -7,7 +7,7 @@ export default function GuestChatPage() {
   return (
     <div
       className="relative overflow-hidden flex flex-col items-center"
-      style={{ minHeight: "100dvh", background: "radial-gradient(ellipse 90% 55% at 50% -12%, rgba(99,102,241,0.16), transparent 65%), radial-gradient(ellipse 60% 40% at 85% 110%, rgba(124,58,237,0.10), transparent 60%), #090E1C" }}
+      style={{ minHeight: "100dvh", background: "#0F172A" }}
     >
       {/* Background grid */}
       <div

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Space_Grotesk, Manrope } from "next/font/google";
+import { Inter, Poppins, Manrope } from "next/font/google";
 import "./globals.css";
 import ErrorLogger from "@/components/ErrorLogger";
 
@@ -9,13 +9,10 @@ const inter = Inter({
   display: "swap",
 });
 
-// Space Grotesk is the display face — geometric, technical, fits the
-// aerospace-AI brand. Exposed under the legacy --font-poppins variable so
-// every existing heading picks it up without touching components.
-const spaceGrotesk = Space_Grotesk({
+const poppins = Poppins({
   variable: "--font-poppins",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700", "800"],
   display: "swap",
 });
 
@@ -69,7 +66,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${spaceGrotesk.variable} ${manrope.variable} h-full antialiased`}
+      className={`${inter.variable} ${poppins.variable} ${manrope.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-[var(--font-inter)]">
         <ErrorLogger />

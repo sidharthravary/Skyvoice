@@ -123,7 +123,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#090E1C] flex items-center justify-center relative overflow-hidden">
+    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center relative overflow-hidden">
       {/* Grid overlay */}
       <div
         className="absolute inset-0 opacity-[0.03] pointer-events-none"
