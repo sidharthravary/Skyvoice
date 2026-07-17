@@ -25,7 +25,7 @@ export function GuestNav() {
     <header
       className="sticky top-0 z-50 flex items-center justify-between px-8 py-4"
       style={{
-        background: "rgba(15,23,42,0.85)",
+        background: "rgba(9,14,28,0.82)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         borderBottom: "1px solid rgba(79,125,243,0.12)",

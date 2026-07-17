@@ -342,3 +342,16 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ─────────────────────────────────────────────
+   PREMIUM TYPE TREATMENT (Space Grotesk display)
+   ───────────────────────────────────────────── */
+
+h1, h2, h3 {
+  letter-spacing: -0.02em;
+}
+
+/* Tabular numerals so live stats don't jitter as they update */
+[class*="stats"], .font-mono {
+  font-variant-numeric: tabular-nums;
+}
