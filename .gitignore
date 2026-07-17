@@ -44,3 +44,7 @@ coverage/
 # dev TLS material (regenerate with openssl; see scripts/https-proxy.js)
 scripts/skyvoice-dev.key
 scripts/skyvoice-dev.crt
+
+# third-party agent skills installed locally (npx skills add ...)
+.agents/
+skills-lock.json
