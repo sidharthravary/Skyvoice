@@ -94,9 +94,9 @@ export default function AnalyticsPage() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      fetch(`${backendUrl}/api/conversations?limit=200`).then((res) => res.json()),
-      fetch(`${backendUrl}/api/appointments?limit=200`).then((res) => res.json()),
-      fetch(`${backendUrl}/api/analytics/trends?days=7`).then((res) => res.json()),
+      fetch(`${backendUrl}/api/conversations?limit=200`, { credentials: "include" }).then((res) => res.json()),
+      fetch(`${backendUrl}/api/appointments?limit=200`, { credentials: "include" }).then((res) => res.json()),
+      fetch(`${backendUrl}/api/analytics/trends?days=7`, { credentials: "include" }).then((res) => res.json()),
     ])
       .then(([convData, aptData, trendData]) => {
         if (convData.success && Array.isArray(convData.data)) {
@@ -173,89 +173,70 @@ export default function AnalyticsPage() {
     }
   }
 
-  // Merge Trends
+  // Conversations per day — real /api/analytics/trends data only
   const weekDaysShort = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const conversationTrends = weekDaysShort.map((day, index) => {
-    const dummyBaselines = [
-      { conversations: 45, resolved: 40 },
-      { conversations: 52, resolved: 48 },
-      { conversations: 48, resolved: 42 },
-      { conversations: 61, resolved: 55 },
-      { conversations: 55, resolved: 50 },
-      { conversations: 32, resolved: 30 },
-      { conversations: 28, resolved: 25 },
-    ];
-
-    const targetDateStr = weekDateStrings[index];
-    const realTrend = trends.find((t) => t._id === targetDateStr);
-
-    if (realTrend) {
-      return {
-        date: day,
-        conversations: realTrend.count,
-        resolved: realTrend.resolved,
-      };
-    }
-
+    const realTrend = trends.find((t) => t._id === weekDateStrings[index]);
     return {
       date: day,
-      ...dummyBaselines[index],
+      conversations: realTrend?.count ?? 0,
+      resolved: realTrend?.resolved ?? 0,
     };
   });
 
-  // Satisfaction score trends
-  const satisfactionTrends = [
-    { date: "W1", score: 88 },
-    { date: "W2", score: 90 },
-    { date: "W3", score: 92 },
-    { date: "W4", score: 91 },
-    { date: "W5", score: 94 },
-    { date: "W6", score: 93 },
-    { date: "W7", score: conversations.length > 0 ? Math.round((conversations.filter(c => c.sentiment === 'positive').length / conversations.length) * 100) : 95 },
-  ];
+  // Satisfaction per day — positive-sentiment share of that day's conversations
+  const satisfactionTrends = weekDaysShort.map((day, index) => {
+    const [dd, mm, yyyy] = (weekDateStrings[index] || "").split("-").map(Number);
+    const dayConvs = conversations.filter((c) => {
+      const d = new Date(c.createdAt);
+      return d.getDate() === dd && d.getMonth() + 1 === mm && d.getFullYear() === yyyy;
+    });
+    return {
+      date: day,
+      score: dayConvs.length > 0
+        ? Math.round((dayConvs.filter((c) => c.sentiment === "positive").length / dayConvs.length) * 100)
+        : 0,
+    };
+  });
 
-  // Unresolved counts
+  // Unresolved by intent — real counts (zero means zero)
   const unresolvedConvs = conversations.filter(c => !c.resolved);
   const unresolvedData = [
-    { category: "Billing", count: unresolvedConvs.filter(c => c.intent === 'escalation').length || 8 },
-    { category: "Technical", count: unresolvedConvs.filter(c => c.intent === 'faq').length || 12 },
-    { category: "General", count: unresolvedConvs.filter(c => c.intent === 'general_query').length || 5 },
-    { category: "Scheduling", count: unresolvedConvs.filter(c => c.intent === 'booking_request').length || 3 },
-    { category: "Other", count: unresolvedConvs.filter(c => c.intent === 'unknown').length || 2 },
+    { category: "Escalations", count: unresolvedConvs.filter(c => c.intent === 'escalation').length },
+    { category: "FAQ", count: unresolvedConvs.filter(c => c.intent === 'faq').length },
+    { category: "General", count: unresolvedConvs.filter(c => c.intent === 'general_query').length },
+    { category: "Scheduling", count: unresolvedConvs.filter(c => c.intent === 'booking_request').length },
+    { category: "Other", count: unresolvedConvs.filter(c => !['escalation','faq','general_query','booking_request'].includes(c.intent)).length },
   ];
 
-  // Booking Conversions
-  let bookingConversions = [
-    { name: "Confirmed", value: 67, color: "#22C55E" },
-    { name: "Pending", value: 15, color: "#F59E0B" },
-    { name: "Cancelled", value: 10, color: "#EF4444" },
-    { name: "No-show", value: 8, color: "#94A3B8" },
+  // Booking conversions — straight from the appointments collection
+  const bookingConversions = [
+    { name: "Confirmed", value: appointments.filter(a => a.status === 'confirmed').length, color: "#22C55E" },
+    { name: "Pending", value: appointments.filter(a => a.status === 'pending').length, color: "#F59E0B" },
+    { name: "Cancelled", value: appointments.filter(a => a.status === 'cancelled').length, color: "#EF4444" },
+    { name: "Completed/No-show", value: appointments.filter(a => a.status === 'no-show' || a.status === 'completed').length, color: "#94A3B8" },
   ];
 
-  if (appointments.length > 0) {
-    const confirmedCount = appointments.filter(a => a.status === 'confirmed').length;
-    const pendingCount = appointments.filter(a => a.status === 'pending').length;
-    const cancelledCount = appointments.filter(a => a.status === 'cancelled').length;
-    const noshowCount = appointments.filter(a => a.status === 'no-show' || a.status === 'completed').length;
-
-    bookingConversions = [
-      { name: "Confirmed", value: confirmedCount || 1, color: "#22C55E" },
-      { name: "Pending", value: pendingCount, color: "#F59E0B" },
-      { name: "Cancelled", value: cancelledCount, color: "#EF4444" },
-      { name: "No-show", value: noshowCount, color: "#94A3B8" },
-    ];
-  }
-
-  // AI Latency
-  const latencyData = [
-    { time: "00:00", latency: 320 },
-    { time: "04:00", latency: 280 },
-    { time: "08:00", latency: conversations.length > 0 ? 350 : 420 },
-    { time: "12:00", latency: conversations.length > 0 ? 310 : 380 },
-    { time: "16:00", latency: conversations.length > 0 ? 330 : 450 },
-    { time: "20:00", latency: 340 },
-    { time: "23:59", latency: 300 },
-  ];
+  // AI response latency — measured user→assistant gaps in recent conversations
+  const latencyData = conversations
+    .slice(0, 12)
+    .map((c) => {
+      const msgs = (c.messages ?? []) as Array<{ role: string; timestamp?: string }>;
+      const convGaps: number[] = [];
+      for (let i = 0; i < msgs.length - 1; i++) {
+        if (msgs[i].role === "user" && msgs[i + 1].role === "assistant" && msgs[i].timestamp && msgs[i + 1].timestamp) {
+          const gap = new Date(msgs[i + 1].timestamp!).getTime() - new Date(msgs[i].timestamp!).getTime();
+          if (gap >= 200 && gap <= 60000) convGaps.push(gap);
+        }
+      }
+      if (convGaps.length === 0) return null;
+      return {
+        time: new Date(c.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        latency: Math.round(convGaps.reduce((a, b) => a + b, 0) / convGaps.length),
+      };
+    })
+    .filter((d): d is { time: string; latency: number } => d !== null)
+    .reverse();
 
   return (
     <div className="space-y-6">
@@ -302,7 +283,7 @@ export default function AnalyticsPage() {
           <GlassCard hover={false}>
             <h3 className="text-sm font-semibold text-[#0F172A] mb-4 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-[#4F7DF3]" />
-              Conversations / Day (Dummy Week + Input Overwrite)
+              Conversations / Day (Last 7 Days)
             </h3>
             <div className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -337,7 +318,7 @@ export default function AnalyticsPage() {
           <GlassCard hover={false}>
             <h3 className="text-sm font-semibold text-[#0F172A] mb-4 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-[#22C55E]" />
-              Satisfaction Trends (Historical + Current Week)
+              Satisfaction by Day (Last 7 Days)
             </h3>
             <div className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -438,7 +419,7 @@ export default function AnalyticsPage() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
           <GlassCard hover={false}>
             <h3 className="text-sm font-semibold text-[#0F172A] mb-4">
-              AI Latency (ms)
+              AI Response Latency — Measured (ms)
             </h3>
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">

@@ -50,8 +50,17 @@ const activeUsers = [
   { id: "3", name: "Mike Johnson", status: "idle", duration: "5m 30s" },
 ];
 
+interface SystemHealth {
+  uptimeFormatted: string;
+  memory: { used: string; usagePercent: number; process: { rss: string } };
+  cpu: { usagePercent: number };
+  sockets: { connected: number };
+  database: { mongodb: string; pingMs: number | null };
+}
+
 export default function MonitoringPage() {
   const [callQuality, setCallQuality] = useState<WebRTCStats | null>(null);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
 
   useEffect(() => {
     const backendUrl = getBackendUrl();
@@ -63,7 +72,16 @@ export default function MonitoringPage() {
       setCallQuality(data);
     });
 
-    return () => { socket.disconnect(); };
+    // Real system health, refreshed every 5 seconds
+    const fetchHealth = () =>
+      fetch(`${backendUrl}/api/monitoring`, { credentials: "include" })
+        .then((r) => r.json())
+        .then((d) => { if (d.success) setHealth(d.data); })
+        .catch(() => {});
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 5000);
+
+    return () => { socket.disconnect(); clearInterval(interval); };
   }, []);
 
   return (
@@ -89,12 +107,12 @@ export default function MonitoringPage() {
         transition={{ delay: 0.1 }}
         className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4"
       >
-        <StatsCard label="CPU Usage" value="23%" icon={Cpu} />
-        <StatsCard label="Memory" value="4.2 GB" icon={Server} />
-        <StatsCard label="Disk" value="67%" icon={HardDrive} />
-        <StatsCard label="Uptime" value="14d 6h" icon={Clock} />
-        <StatsCard label="WS Clients" value={42} icon={Wifi} />
-        <StatsCard label="DB Queries/s" value={128} icon={Database} />
+        <StatsCard label="CPU Usage" value={health ? `${health.cpu.usagePercent}%` : "—"} icon={Cpu} />
+        <StatsCard label="Memory Used" value={health ? health.memory.used : "—"} icon={Server} />
+        <StatsCard label="Backend RAM" value={health ? health.memory.process.rss : "—"} icon={HardDrive} />
+        <StatsCard label="Uptime" value={health ? health.uptimeFormatted.replace(/(\d+m) \d+s$/, "$1") : "—"} icon={Clock} />
+        <StatsCard label="WS Clients" value={health ? health.sockets.connected : "—"} icon={Wifi} />
+        <StatsCard label="DB Ping" value={health?.database.pingMs != null ? `${health.database.pingMs}ms` : "—"} icon={Database} />
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

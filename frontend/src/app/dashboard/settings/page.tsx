@@ -50,7 +50,7 @@ export default function SettingsPage() {
     const backendUrl = getBackendUrl();
     
     // Load config from backend
-    fetch(`${backendUrl}/api/config`)
+    fetch(`${backendUrl}/api/config`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.data) {
@@ -152,6 +152,7 @@ export default function SettingsPage() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           voiceName: selectedVoiceName,
           greeting,

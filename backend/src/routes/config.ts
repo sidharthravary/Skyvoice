@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { AIConfig } from '../models/aiConfig.model';
+import { adminOnly } from '../middleware/auth';
 
 const router = Router();
 
@@ -42,7 +43,7 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
 });
 
 // PUT /api/config — Update AI config
-router.put('/', async (req: Request, res: Response, next: NextFunction) => {
+router.put('/', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const config = await AIConfig.findOneAndUpdate(
       {},

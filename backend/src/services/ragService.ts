@@ -303,6 +303,77 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Array<{
   }
 }
 
+// Chunk + embed + store plain text (shared by PDF/DOCX and URL ingestion)
+export async function ingestPlainText(
+  title: string,
+  text: string,
+  sourceType: 'pdf' | 'docx' | 'url' | 'manual',
+  sourceUrl?: string
+): Promise<{ chunks: string[]; status: 'success' | 'error' }> {
+  try {
+    if (!text.trim()) throw new Error('Text is empty');
+    const chunks = chunkText(text);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const embedding = await generateEmbedding(chunk);
+      await KnowledgeBase.create({
+        title: chunks.length > 1 ? `${title} (Part ${i + 1})` : title,
+        content: chunk,
+        embedding,
+        sourceType,
+        sourceUrl,
+        chunkIndex: i,
+        totalChunks: chunks.length,
+        indexStatus: 'indexed',
+      });
+    }
+    return { chunks, status: 'success' };
+  } catch (error) {
+    console.error('[RAG] Failed to ingest text:', error);
+    return { chunks: [], status: 'error' };
+  }
+}
+
+// Fetch a web page and reduce it to readable text
+export async function fetchUrlAsText(url: string): Promise<{ title: string; text: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'SkyVoice-KnowledgeBot/1.0' },
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/') && !contentType.includes('html')) {
+      throw new Error(`Unsupported content type: ${contentType}`);
+    }
+    const html = await res.text();
+
+    const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+    const pageTitle = titleMatch?.[1]?.trim() || url;
+
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#\d+;|&\w+;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return { title: pageTitle, text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Main function to parse and ingest documents
 export async function ingestDocument(
   title: string,

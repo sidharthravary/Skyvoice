@@ -240,7 +240,7 @@ export default function ConversationsPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${backendUrl}/api/conversations?limit=100`)
+    fetch(`${backendUrl}/api/conversations?limit=100`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.data)) {

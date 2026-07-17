@@ -10,6 +10,16 @@ import { getBackendUrl } from "@/lib/backend";
 // Disabled — the original (video-verified) flow uses browser speech + Socket.io.
 const WEBRTC_ENABLED = false;
 
+export type VoiceLanguage = "en-US" | "hi-IN" | "ml-IN";
+
+export const VOICE_LANGUAGES: Array<{ code: VoiceLanguage; label: string }> = [
+  { code: "en-US", label: "English" },
+  { code: "hi-IN", label: "हिंदी" },
+  { code: "ml-IN", label: "മലയാളം" },
+];
+
+const WAKE_WORD_RE = /\b(?:hey|hi|ok|okay)?[,\s]*sky\s*voice\b/i;
+
 export function useVoiceAI() {
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [isBrowserAssist, setIsBrowserAssist] = useState<boolean>(true);
@@ -17,8 +27,14 @@ export function useVoiceAI() {
   const [aiText, setAiText] = useState<string>("");
   const [isConnected, setIsConnected] = useState<boolean>(false);
 
+  const [language, setLanguageState] = useState<VoiceLanguage>("en-US");
+  const [wakeWordEnabled, setWakeWordEnabledState] = useState<boolean>(false);
+
   const socketRef = useRef<Socket | null>(null);
   const recognitionRef = useRef<any>(null);
+  const wakeRecognitionRef = useRef<any>(null);
+  const languageRef = useRef<VoiceLanguage>("en-US");
+  const wakeEnabledRef = useRef<boolean>(false);
 
   const isBrowserAssistRef = useRef<boolean>(isBrowserAssist);
   const voiceNameRef = useRef<string>("Default");
@@ -34,6 +50,32 @@ export function useVoiceAI() {
   useEffect(() => {
     isBrowserAssistRef.current = isBrowserAssist;
   }, [isBrowserAssist]);
+
+  // Restore saved language / wake-word preference
+  useEffect(() => {
+    const savedLang = localStorage.getItem("skyvoice_lang") as VoiceLanguage | null;
+    if (savedLang && VOICE_LANGUAGES.some((l) => l.code === savedLang)) {
+      setLanguageState(savedLang);
+      languageRef.current = savedLang;
+    }
+    if (localStorage.getItem("skyvoice_wakeword") === "1") {
+      setWakeWordEnabledState(true);
+      wakeEnabledRef.current = true;
+    }
+  }, []);
+
+  const setLanguage = (lang: VoiceLanguage) => {
+    setLanguageState(lang);
+    languageRef.current = lang;
+    localStorage.setItem("skyvoice_lang", lang);
+  };
+
+  const setWakeWordEnabled = (enabled: boolean) => {
+    setWakeWordEnabledState(enabled);
+    wakeEnabledRef.current = enabled;
+    localStorage.setItem("skyvoice_wakeword", enabled ? "1" : "0");
+    if (!enabled) stopWakeListener();
+  };
 
   useEffect(() => {
     orbStateRef.current = orbState;
@@ -127,9 +169,17 @@ export function useVoiceAI() {
 
       const utterance = new SpeechSynthesisUtterance(text);
       utteranceRef.current = utterance;
+      utterance.lang = languageRef.current;
 
       const browserVoices = window.speechSynthesis.getVoices();
-      const matchedVoice = browserVoices.find((v) => v.name === voiceNameRef.current);
+      // Prefer the configured voice; otherwise any voice for the chosen language
+      const langPrefix = languageRef.current.split("-")[0];
+      const matchedVoice =
+        browserVoices.find((v) => v.name === voiceNameRef.current && v.lang.startsWith(langPrefix)) ||
+        (languageRef.current !== "en-US"
+          ? browserVoices.find((v) => v.lang.replace("_", "-").startsWith(languageRef.current)) ||
+            browserVoices.find((v) => v.lang.startsWith(langPrefix))
+          : browserVoices.find((v) => v.name === voiceNameRef.current));
       if (matchedVoice) utterance.voice = matchedVoice;
 
       utterance.onstart = () => { setOrbState("speaking"); };
@@ -201,11 +251,13 @@ export function useVoiceAI() {
 
     if (window.speechSynthesis) window.speechSynthesis.cancel();
 
+    stopWakeListener(); // never run two recognizers at once
+
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = "en-US";
+    recognition.lang = languageRef.current;
 
     recognition.onstart = () => {
       setOrbState("listening");
@@ -239,6 +291,65 @@ export function useVoiceAI() {
       }
     }
   }
+
+  // ── Wake word ("Hey SkyVoice") — background listener while idle ───────────────
+
+  function stopWakeListener() {
+    if (wakeRecognitionRef.current) {
+      const rec = wakeRecognitionRef.current;
+      wakeRecognitionRef.current = null; // clear first so onend doesn't restart it
+      try { rec.stop(); } catch { /* ignore */ }
+    }
+  }
+
+  function startWakeListener() {
+    if (typeof window === "undefined") return;
+    if (!wakeEnabledRef.current || wakeRecognitionRef.current) return;
+    if (activeSessionRef.current || orbStateRef.current !== "idle") return;
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const rec = new SpeechRecognition();
+    wakeRecognitionRef.current = rec;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US"; // the wake phrase itself is English
+
+    rec.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const heard = event.results[i][0]?.transcript ?? "";
+        if (WAKE_WORD_RE.test(heard)) {
+          console.log("[useVoiceAI] 🎤 Wake word detected:", heard);
+          stopWakeListener();
+          toggleVoiceSession();
+          return;
+        }
+      }
+    };
+
+    rec.onerror = () => { /* restart via onend */ };
+    rec.onend = () => {
+      // Chrome stops recognition after silence — keep it alive while enabled/idle
+      if (wakeRecognitionRef.current === rec) {
+        wakeRecognitionRef.current = null;
+        setTimeout(startWakeListener, 400);
+      }
+    };
+
+    try { rec.start(); } catch { wakeRecognitionRef.current = null; }
+  }
+
+  // Run/stop the wake listener as state changes
+  useEffect(() => {
+    if (wakeWordEnabled && orbState === "idle" && !activeSessionRef.current) {
+      startWakeListener();
+    } else if (orbState !== "idle") {
+      stopWakeListener();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeWordEnabled, orbState]);
 
   // ── WebRTC initialisation ──────────────────────────────────────────────────────
 
@@ -339,5 +450,9 @@ export function useVoiceAI() {
     isBrowserAssist,
     toggleVoiceSession,
     speak: speakBrowser,
+    language,
+    setLanguage,
+    wakeWordEnabled,
+    setWakeWordEnabled,
   };
 }

@@ -94,6 +94,30 @@ export async function generateGeminiResponse(prompt: string, context: string): P
   });
 }
 
+// Streaming variant — invokes onChunk as tokens arrive and resolves with the
+// full text. No retry (a retry after emitted chunks would duplicate output);
+// callers should fall back to generateGeminiResponse on failure.
+export async function generateGeminiResponseStream(
+  prompt: string,
+  context: string,
+  onChunk: (text: string) => void
+): Promise<string> {
+  const model = getModel();
+  if (!model) throw new Error('Gemini not configured');
+  const fullPrompt = context ? `${context}\n\n${prompt}` : prompt;
+
+  const result = await model.generateContentStream(fullPrompt);
+  let full = '';
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) {
+      full += text;
+      onChunk(text);
+    }
+  }
+  return full.trim();
+}
+
 const VALID_INTENTS = [
   'general_query', 'booking_request', 'project_inquiry',
   'operational_query', 'faq', 'escalation', 'greeting', 'farewell',

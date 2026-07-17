@@ -1,8 +1,41 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { Conversation } from '../models/conversation.model';
 import { ApiError } from '../middleware/errorHandler';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 
 const router = Router();
+
+// Separate router for the logged-in user's own chat history — mounted at
+// /api/conversations/mine BEFORE the admin-only router (any signed-in user).
+export const myConversationsRouter = Router();
+
+myConversationsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    // Only conversations where the user actually spoke (skips greeting-only
+    // records from before this was filtered at save time)
+    const convs = await Conversation.find({ userId: req.userId, 'messages.role': 'user' })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('messages createdAt')
+      .lean();
+
+    // Oldest conversation first, capped to the last 50 messages overall
+    const messages = convs
+      .reverse()
+      .flatMap((c) =>
+        (c.messages ?? []).map((m: { role: string; content: string; timestamp?: Date }) => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp ?? c.createdAt,
+        }))
+      )
+      .slice(-50);
+
+    res.json({ success: true, data: messages });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // GET /api/conversations — List conversations with pagination
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {

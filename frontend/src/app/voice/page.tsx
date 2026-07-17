@@ -5,8 +5,8 @@ import { motion } from "framer-motion";
 import { AIOrb } from "@/components/ui/AIOrb";
 import { WaveformVisualizer } from "@/components/ui/WaveformVisualizer";
 import { GuestNav } from "@/components/ui/GuestNav";
-import { useVoiceAI } from "@/hooks/useVoiceAI";
-import { Mic, Radio } from "lucide-react";
+import { useVoiceAI, VOICE_LANGUAGES } from "@/hooks/useVoiceAI";
+import { Mic, Radio, Zap } from "lucide-react";
 
 // Status pill labels/colors — matches the original SkyVoice client UI
 const PILL_LABELS: Record<string, string> = {
@@ -38,7 +38,10 @@ function useOrbSize(): number {
 }
 
 export default function VoicePage() {
-  const { orbState, transcript, aiText, isConnected, toggleVoiceSession } = useVoiceAI();
+  const {
+    orbState, transcript, aiText, isConnected, toggleVoiceSession,
+    language, setLanguage, wakeWordEnabled, setWakeWordEnabled,
+  } = useVoiceAI();
   const orbSize = useOrbSize();
 
   const pillLabel = PILL_LABELS[orbState] ?? "Ready";
@@ -153,6 +156,49 @@ export default function VoicePage() {
             <Mic size={14} color="#4F7DF3" />
             Click the orb to speak with SkyVoice AI
           </p>
+        )}
+
+        {/* Language + wake word controls (idle only) */}
+        {orbState === "idle" && (
+          <div className="flex flex-col items-center gap-2.5">
+            <div className="flex items-center gap-1.5">
+              {VOICE_LANGUAGES.map((l) => (
+                <button
+                  key={l.code}
+                  onClick={() => setLanguage(l.code)}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    background: language === l.code ? "rgba(79,125,243,0.18)" : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${language === l.code ? "rgba(79,125,243,0.45)" : "rgba(255,255,255,0.08)"}`,
+                    color: language === l.code ? "#8FB2FF" : "#64748B",
+                  }}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setWakeWordEnabled(!wakeWordEnabled)}
+              className="flex items-center gap-1.5"
+              style={{
+                padding: "5px 12px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+                background: wakeWordEnabled ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
+                border: `1px solid ${wakeWordEnabled ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.08)"}`,
+                color: wakeWordEnabled ? "#4ADE80" : "#64748B",
+              }}
+            >
+              <Zap size={12} />
+              {wakeWordEnabled ? "Wake word on — say “Hey SkyVoice”" : "Enable “Hey SkyVoice” wake word"}
+            </button>
+          </div>
         )}
 
         {/* Waveform — framed card ("VOICE INPUT FEED" / "AI VOICE SYNTHESIS") */}

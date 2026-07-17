@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { captureError } from '../services/sentryService';
 
 interface AppError extends Error {
   statusCode?: number;
@@ -17,12 +18,16 @@ export function errorHandler(
   console.error(`[Error] ${statusCode} — ${err.message}`);
   if (!err.isOperational) {
     console.error(err.stack);
+    captureError(err); // reported to Sentry when SENTRY_DSN is configured
   }
 
+  // Stack traces only for unexpected errors, and never in production —
+  // expected 4xx responses (bad login, validation) stay clean everywhere.
+  const includeStack = process.env.NODE_ENV !== 'production' && !err.isOperational;
   res.status(statusCode).json({
     success: false,
     error: message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    ...(includeStack && { stack: err.stack }),
   });
 }
 

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Upload,
   FileText,
+  Link2,
   Plus,
   Search,
   RefreshCw,
@@ -62,6 +63,10 @@ export default function KnowledgePage() {
   const [faqQuestion, setFaqQuestion] = useState("");
   const [faqAnswer, setFaqAnswer] = useState("");
   const [faqSubmitting, setFaqSubmitting] = useState(false);
+
+  const [showUrlForm, setShowUrlForm] = useState(false);
+  const [urlValue, setUrlValue] = useState("");
+  const [urlSubmitting, setUrlSubmitting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const BACKEND = getBackendUrl();
@@ -165,6 +170,37 @@ export default function KnowledgePage() {
       setActionError("Could not save FAQ — server unreachable.");
     } finally {
       setFaqSubmitting(false);
+    }
+  }
+
+  // ── URL ingestion ─────────────────────────────────────────────────────────
+
+  async function submitUrl(e: React.FormEvent) {
+    e.preventDefault();
+    const url = urlValue.trim();
+    if (!url) return;
+    setUrlSubmitting(true);
+    setActionError("");
+    try {
+      const res = await fetch(`${BACKEND}/api/knowledge/url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setActionError(data?.error || data?.message || "Could not add URL.");
+        return;
+      }
+      setUrlValue("");
+      setShowUrlForm(false);
+      setActiveTab("documents");
+      await fetchEntries();
+    } catch {
+      setActionError("Could not add URL — server unreachable.");
+    } finally {
+      setUrlSubmitting(false);
     }
   }
 
@@ -291,11 +327,18 @@ export default function KnowledgePage() {
 
           <div className="flex items-center gap-3 mt-4 flex-wrap">
             <button
-              onClick={() => setShowFaqForm((v) => !v)}
+              onClick={() => { setShowFaqForm((v) => !v); setShowUrlForm(false); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4F7DF3]/8 text-[#4F7DF3] text-sm font-medium hover:bg-[#4F7DF3]/15 transition-colors cursor-pointer"
             >
               {showFaqForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               {showFaqForm ? "Close FAQ form" : "Add FAQ"}
+            </button>
+            <button
+              onClick={() => { setShowUrlForm((v) => !v); setShowFaqForm(false); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4F7DF3]/8 text-[#4F7DF3] text-sm font-medium hover:bg-[#4F7DF3]/15 transition-colors cursor-pointer"
+            >
+              {showUrlForm ? <X className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
+              {showUrlForm ? "Close URL form" : "Add URL"}
             </button>
             <div className="flex-1" />
             {pendingCount > 0 && (
@@ -313,6 +356,37 @@ export default function KnowledgePage() {
               {retraining ? "Re-embedding…" : "Retrain Embeddings"}
             </button>
           </div>
+
+          {/* Inline URL form */}
+          <AnimatePresence>
+            {showUrlForm && (
+              <motion.form
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                onSubmit={submitUrl}
+                className="overflow-hidden"
+              >
+                <div className="mt-4 p-4 rounded-xl bg-[#F5F9FF] border border-[#4F7DF3]/10 flex gap-3">
+                  <input
+                    type="url"
+                    placeholder="https://example.com/page-to-learn-from"
+                    value={urlValue}
+                    onChange={(e) => setUrlValue(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg bg-white border border-[#4F7DF3]/15 text-sm text-[#0F172A] outline-none focus:border-[#4F7DF3]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={urlSubmitting || !urlValue.trim()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#4F7DF3] to-[#6FAEFF] text-white text-sm font-semibold disabled:opacity-50 cursor-pointer"
+                  >
+                    {urlSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                    Ingest Page
+                  </button>
+                </div>
+              </motion.form>
+            )}
+          </AnimatePresence>
 
           {/* Inline FAQ form */}
           <AnimatePresence>

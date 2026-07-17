@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import os from 'os';
 import mongoose from 'mongoose';
+import { getCpuUsagePercent, getWsClientCount } from '../services/metricsService';
 
 const router = Router();
 
@@ -22,6 +23,16 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
       2: 'connecting',
       3: 'disconnecting',
     };
+
+    // Real DB round-trip time (null when not connected)
+    let dbPingMs: number | null = null;
+    if (mongoState === 1 && mongoose.connection.db) {
+      const t0 = Date.now();
+      try {
+        await mongoose.connection.db.admin().ping();
+        dbPingMs = Date.now() - t0;
+      } catch { /* leave null */ }
+    }
 
     res.json({
       success: true,
@@ -49,8 +60,15 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
             external: formatBytes(memUsage.external),
           },
         },
+        cpu: {
+          usagePercent: getCpuUsagePercent(),
+        },
+        sockets: {
+          connected: getWsClientCount(),
+        },
         database: {
           mongodb: mongoStates[mongoState] || 'unknown',
+          pingMs: dbPingMs,
         },
         startedAt: new Date(startTime).toISOString(),
       },

@@ -9,7 +9,16 @@ export interface AuthRequest extends Request {
 
 export const AUTH_COOKIE = 'skyvoice_token';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'skyvoice-dev-local-secret-key-12345';
+// In production a real JWT_SECRET is mandatory — refuse to boot without one
+// rather than silently signing tokens with a public default.
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in production (see .env.example)');
+}
+export const JWT_SECRET = process.env.JWT_SECRET || 'skyvoice-dev-local-secret-key-12345';
+
+export function signToken(userId: string, username: string, role: string): string {
+  return jwt.sign({ userId, username, role }, JWT_SECRET, { expiresIn: '7d' });
+}
 
 // Minimal cookie-header parser (avoids a cookie-parser dependency).
 export function parseCookies(header: string | undefined): Record<string, string> {
@@ -82,4 +91,15 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
       next(new ApiError(401, 'Invalid or expired token'));
     }
   }
+}
+
+// Admin-only gate for dashboard APIs (knowledge, analytics, config, …)
+export function adminOnly(req: AuthRequest, res: Response, next: NextFunction): void {
+  authMiddleware(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    if (req.userRole !== 'admin') {
+      return next(new ApiError(403, 'Admin access required'));
+    }
+    next();
+  });
 }

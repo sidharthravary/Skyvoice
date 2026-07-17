@@ -78,7 +78,7 @@ export default function SchedulingPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${backendUrl}/api/appointments?limit=100`)
+    fetch(`${backendUrl}/api/appointments?limit=100`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.data)) {
@@ -95,6 +95,7 @@ export default function SchedulingPage() {
       const res = await fetch(`${backendUrl}/api/appointments/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ status: "cancelled" }),
       });
       if (res.ok) {

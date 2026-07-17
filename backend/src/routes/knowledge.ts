@@ -2,7 +2,13 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { KnowledgeBase } from '../models/knowledgeBase.model';
 import { ApiError } from '../middleware/errorHandler';
-import { ingestDocument, searchKnowledge, generateEmbedding } from '../services/ragService';
+import {
+  ingestDocument,
+  ingestPlainText,
+  fetchUrlAsText,
+  searchKnowledge,
+  generateEmbedding,
+} from '../services/ragService';
 import { validateBody } from '../middleware/validate';
 import { z } from 'zod';
 
@@ -13,6 +19,15 @@ const faqSchema = z.object({
 
 const searchSchema = z.object({
   query: z.string().trim().min(1, 'Search query is required').max(500),
+});
+
+const urlSchema = z.object({
+  url: z
+    .string()
+    .trim()
+    .url('A valid URL is required')
+    .refine((u) => u.startsWith('http://') || u.startsWith('https://'), 'Only http(s) URLs are supported'),
+  title: z.string().trim().max(300).optional(),
 });
 
 const upload = multer({
@@ -91,6 +106,45 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
         console.error('[Knowledge Route] Background ingestion failed:', err);
         await KnowledgeBase.findByIdAndUpdate(entry._id, { indexStatus: 'error' });
       });
+
+    res.status(201).json({ success: true, data: entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/knowledge/url — Ingest a web page into the knowledge base
+router.post('/url', validateBody(urlSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { url, title } = req.body;
+
+    const entry = await KnowledgeBase.create({
+      title: title || url,
+      content: 'Fetching page…',
+      sourceType: 'url',
+      sourceUrl: url,
+      indexStatus: 'pending',
+    });
+
+    // Fetch + chunk + embed in the background, like file uploads
+    (async () => {
+      try {
+        const page = await fetchUrlAsText(url);
+        const result = await ingestPlainText(title || page.title, page.text, 'url', url);
+        if (result.status === 'success') {
+          await KnowledgeBase.findByIdAndUpdate(entry._id, {
+            title: title || page.title,
+            content: page.text.slice(0, 1000),
+            indexStatus: 'indexed',
+          });
+        } else {
+          await KnowledgeBase.findByIdAndUpdate(entry._id, { indexStatus: 'error' });
+        }
+      } catch (err) {
+        console.error('[Knowledge URL] Ingestion failed:', err);
+        await KnowledgeBase.findByIdAndUpdate(entry._id, { indexStatus: 'error' });
+      }
+    })();
 
     res.status(201).json({ success: true, data: entry });
   } catch (error) {

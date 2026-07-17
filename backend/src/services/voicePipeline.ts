@@ -1,6 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import { parseCookies } from '../middleware/auth';
+import { parseCookies, JWT_SECRET } from '../middleware/auth';
 import { searchKnowledge } from './ragService';
 import { getAvailableSlots, parseNaturalDate, parseNaturalTime } from './calendarService';
 import { ProjectInquiry } from '../models/projectInquiry.model';
@@ -11,7 +11,8 @@ import { OpenAI } from 'openai';
 import { AIConfig } from '../models/aiConfig.model';
 import { sendEmail, getProjectInquiryTemplate } from './emailService';
 import {
-  analyzeWithGemini, generateGeminiResponse, generateGeminiJson, isGeminiReady
+  analyzeWithGemini, generateGeminiResponse, generateGeminiResponseStream,
+  generateGeminiJson, isGeminiReady
 } from './geminiService';
 import {
   trackVoiceQuery, trackBooking, trackProjectUpdate
@@ -85,7 +86,7 @@ function decodeSocketAuth(socket: Socket): { userId: string; username: string; f
     if (token) {
       const payload = jwt.verify(
         token,
-        process.env.JWT_SECRET || 'skyvoice-dev-local-secret-key-12345'
+        JWT_SECRET
       ) as { userId: string };
       return { userId: payload.userId, username, fullName };
     }
@@ -362,7 +363,9 @@ export function setupVoicePipeline(io: Server) {
 
       try {
         console.log(`[Voice Pipeline] 🔄 Processing: "${text}" (session state: ${session.state})`);
-        const response = await processConversationTurn(text, session, uid);
+        const response = await processConversationTurn(text, session, uid, (chunk) => {
+          socket.emit('ai-response-chunk', chunk);
+        });
         clearTimeout(watchdog);
 
         console.log(`[Voice Pipeline] ✅ Response: "${response.substring(0, 80)}..."`);
@@ -492,6 +495,13 @@ export function setupVoicePipeline(io: Server) {
 
       const session = sessions.get(socket.id);
       const uid     = socketUserIds.get(socket.id) || socket.id;
+      // Only persist conversations where the user actually said something —
+      // page loads that just received the greeting aren't conversations.
+      if (session && !session.messages.some((m) => m.role === 'user')) {
+        sessions.delete(socket.id);
+        socketUserIds.delete(socket.id);
+        return;
+      }
       if (session) {
         try {
           const sentiment = await detectSentiment(session.messages);
@@ -727,7 +737,8 @@ CRITICAL VOICE CONSTRAINTS:
 async function processConversationTurn(
   text:    string,
   session: UserSession,
-  userId:  string
+  userId:  string,
+  onChunk?: (text: string) => void
 ): Promise<string> {
   const fullName = session.fullName || 'there';
 
@@ -904,7 +915,21 @@ async function processConversationTurn(
         'Conversation so far:',
         ...session.messages.map(m => `${m.role}: ${m.content}`),
       ].join('\n\n');
-      const reply = await generateGeminiResponse(`User: ${text}\nAssistant:`, ctx);
+      const geminiPrompt = `User: ${text}\nAssistant:`;
+
+      // Stream tokens to the client when a chunk sink is provided (chat UI);
+      // fall back to the non-streaming call if streaming fails mid-flight.
+      if (onChunk) {
+        try {
+          const reply = await generateGeminiResponseStream(geminiPrompt, ctx, onChunk);
+          console.log(`[Pipeline] ✅ [3/4] Gemini streamed response (${reply.length} chars)`);
+          return reply;
+        } catch (err) {
+          console.warn('[Pipeline] ⚠️ [3/4] Gemini streaming failed, retrying non-streaming:', (err as Error).message);
+        }
+      }
+
+      const reply = await generateGeminiResponse(geminiPrompt, ctx);
       console.log(`[Pipeline] ✅ [3/4] Gemini response (${reply.length} chars)`);
       return reply;
     } catch (err) {

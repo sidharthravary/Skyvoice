@@ -10,6 +10,7 @@ import {
   clearAuthCookies,
   getTokenFromRequest,
   verifyToken,
+  signToken,
 } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { z } from 'zod';
@@ -33,13 +34,9 @@ const registerSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters').max(128),
 });
 
-function signToken(userId: string, username: string, role: string): string {
-  return jwt.sign(
-    { userId, username, role },
-    process.env.JWT_SECRET || 'skyvoice-dev-local-secret-key-12345',
-    { expiresIn: '7d' }
-  );
-}
+// Admin password comes from the environment; the literal fallback exists
+// for fresh local development only (see .env.example).
+const adminPassword = () => process.env.ADMIN_PASSWORD || 'Skyvoice';
 
 // POST /api/auth/login
 router.post('/login', rateLimiter, validateBody(loginSchema), async (req: Request, res: Response, next: NextFunction) => {
@@ -54,8 +51,18 @@ router.post('/login', rateLimiter, validateBody(loginSchema), async (req: Reques
     if (username === 'Admin') {
       let adminUser = await User.findOne({ username: 'Admin' });
       if (!adminUser) {
-        const hash = await bcrypt.hash('Skyvoice', 10);
+        const hash = await bcrypt.hash(adminPassword(), 10);
         adminUser = await User.create({ username: 'Admin', passwordHash: hash, role: 'admin' });
+      }
+
+      // ADMIN_PASSWORD in .env is the source of truth: if it changed since
+      // the stored hash was created, re-hash so the env value always wins.
+      if (
+        process.env.ADMIN_PASSWORD &&
+        !(await bcrypt.compare(process.env.ADMIN_PASSWORD, adminUser.passwordHash))
+      ) {
+        adminUser.passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
+        await adminUser.save();
       }
 
       const isMatch = await bcrypt.compare(password, adminUser.passwordHash);

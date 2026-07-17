@@ -4,7 +4,7 @@ import { UserSession } from '../models/userSession.model';
 import { ApiError } from '../middleware/errorHandler';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'skyvoice-dev-local-secret-key-12345';
+import { JWT_SECRET } from '../middleware/auth';
 
 function requireAuth(req: Request): { userId: string; role: string } {
   const header = req.headers.authorization;

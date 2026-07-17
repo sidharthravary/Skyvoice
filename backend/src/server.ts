@@ -15,9 +15,14 @@ import { connectDatabase } from './config/database';
 import { connectRedis } from './config/redis';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
+import { adminOnly } from './middleware/auth';
+import { setIoInstance } from './services/metricsService';
+import { initSentry } from './services/sentryService';
+
+initSentry();
 
 // Route imports
-import conversationRoutes from './routes/conversations';
+import conversationRoutes, { myConversationsRouter } from './routes/conversations';
 import appointmentRoutes from './routes/appointments';
 import inquiryRoutes from './routes/inquiries';
 import knowledgeRoutes from './routes/knowledge';
@@ -82,16 +87,19 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── API Routes ──
+// Admin-only surfaces are gated server-side (adminOnly = valid JWT + admin
+// role); public surfaces: auth, per-user appointments, config GET (greeting).
 app.use('/api/auth',          authRoutes);
 app.use('/api/users',         userRoutes);
-app.use('/api/conversations', conversationRoutes);
+app.use('/api/conversations/mine', myConversationsRouter); // own history (any signed-in user)
+app.use('/api/conversations', adminOnly, conversationRoutes);
 app.use('/api/appointments',  appointmentRoutes);
-app.use('/api/inquiries',     inquiryRoutes);
-app.use('/api/knowledge',     knowledgeRoutes);
-app.use('/api/analytics',     analyticsRoutes);
-app.use('/api/calendar',      calendarRoutes);
-app.use('/api/config',        configRoutes);
-app.use('/api/monitoring',    monitoringRoutes);
+app.use('/api/inquiries',     adminOnly, inquiryRoutes);
+app.use('/api/knowledge',     adminOnly, knowledgeRoutes);
+app.use('/api/analytics',     adminOnly, analyticsRoutes);
+app.use('/api/calendar',      adminOnly, calendarRoutes);
+app.use('/api/config',        configRoutes); // GET public (voice greeting); writes gated in-route
+app.use('/api/monitoring',    adminOnly, monitoringRoutes);
 
 // ── Socket.io general namespace ──
 io.on('connection', (socket) => {
@@ -110,6 +118,7 @@ io.of('/monitoring').on('connection', (socket) => {
 });
 
 setupVoicePipeline(io);
+setIoInstance(io); // real WS client counts for /api/monitoring
 
 // ── Error Handler (must be last) ──
 app.use(errorHandler);
