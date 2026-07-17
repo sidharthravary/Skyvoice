@@ -314,3 +314,31 @@ body {
   --sky-text-muted: #64748B;
   background: var(--sky-bg-dark);
 }
+
+/* ─────────────────────────────────────────────
+   QUALITY FLOOR — a11y & motion (UI/UX pass)
+   ───────────────────────────────────────────── */
+
+/* Visible keyboard focus without affecting mouse users */
+:focus-visible {
+  outline: 2px solid #4F7DF3;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Consistent text selection */
+::selection {
+  background: rgba(79, 125, 243, 0.25);
+}
+
+/* Respect users who opt out of motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
