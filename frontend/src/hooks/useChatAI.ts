@@ -11,38 +11,44 @@ export interface ChatMessage {
   text: string;
 }
 
+export interface ChatThread {
+  _id: string;
+  title: string;
+  createdAt: string;
+  messageCount: number;
+}
+
 let nextId = 0;
 const msgId = () => `msg-${Date.now()}-${nextId++}`;
 
 // Text chat over the same Socket.io voice pipeline the orb uses — identical
 // brain (knowledge base RAG, appointments, booking flow, Gemini), no audio.
+// The server seeds each session with recent history, so the AI remembers
+// past conversations; threads give a ChatGPT-style sidebar of old chats.
 export function useChatAI() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typing, setTyping] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [viewedThread, setViewedThread] = useState<{ id: string; messages: ChatMessage[] } | null>(null);
+
   const socketRef = useRef<Socket | null>(null);
   const greetedRef = useRef(false);
   const streamingIdRef = useRef<string | null>(null);
 
-  // Load the user's previous conversations (ChatGPT-style persistence)
-  useEffect(() => {
+  const refreshThreads = useCallback(() => {
     fetch(`${getBackendUrl()}/api/conversations/mine`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d?.success && Array.isArray(d.data) && d.data.length > 0) {
-          const history: ChatMessage[] = d.data.map(
-            (m: { role: string; content: string }) => ({
-              id: msgId(),
-              role: m.role === "user" ? "user" : "assistant",
-              text: m.content,
-            })
-          );
-          setMessages((prev) => [...history, ...prev]);
-        }
+        if (d?.success && Array.isArray(d.data)) setThreads(d.data);
       })
-      .catch(() => {}); // guests simply have no history
+      .catch(() => {}); // guests simply have no threads
   }, []);
+
+  useEffect(() => {
+    refreshThreads();
+  }, [refreshThreads]);
 
   useEffect(() => {
     const socket = io(`${getBackendUrl()}/voice`, {
@@ -98,18 +104,61 @@ export function useChatAI() {
       setTyping(status === "thinking");
     });
 
+    socket.on("session-reset", (data: { greeting: string }) => {
+      streamingIdRef.current = null;
+      setTyping(false);
+      setMessages([{ id: msgId(), role: "assistant", text: data.greeting }]);
+      refreshThreads(); // the previous thread was just saved
+    });
+
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [refreshThreads]);
 
   const sendMessage = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed || !socketRef.current) return;
+    setViewedThread(null); // typing always continues the live chat
     setMessages((prev) => [...prev, { id: msgId(), role: "user", text: trimmed }]);
     setTyping(true);
     socketRef.current.emit("text-input", trimmed);
   }, []);
 
-  return { messages, typing, isConnected, sendMessage };
+  const newChat = useCallback(() => {
+    setViewedThread(null);
+    socketRef.current?.emit("reset-session");
+  }, []);
+
+  const viewThread = useCallback((id: string) => {
+    fetch(`${getBackendUrl()}/api/conversations/mine/${id}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.success && Array.isArray(d.data)) {
+          setViewedThread({
+            id,
+            messages: d.data.map((m: { role: string; content: string }) => ({
+              id: msgId(),
+              role: m.role === "user" ? "user" : "assistant",
+              text: m.content,
+            })),
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const backToLive = useCallback(() => setViewedThread(null), []);
+
+  return {
+    messages,
+    typing,
+    isConnected,
+    sendMessage,
+    threads,
+    viewedThread,
+    viewThread,
+    backToLive,
+    newChat,
+  };
 }

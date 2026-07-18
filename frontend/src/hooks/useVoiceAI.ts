@@ -35,6 +35,8 @@ export function useVoiceAI() {
   const wakeRecognitionRef = useRef<any>(null);
   const languageRef = useRef<VoiceLanguage>("en-US");
   const wakeEnabledRef = useRef<boolean>(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const serverTtsDisabledUntilRef = useRef<number>(0);
 
   const isBrowserAssistRef = useRef<boolean>(isBrowserAssist);
   const voiceNameRef = useRef<string>("Default");
@@ -141,10 +143,9 @@ export function useVoiceAI() {
       console.log("[useVoiceAI] AI text response:", text);
       setAiText(text);
 
-      // Speak via browser TTS (fallback always active; covers the WebRTC path too since
-      // ElevenLabs TTS-over-WebRTC is not yet wired — browser TTS is the output path)
+      // Speak the reply — Gemini natural voice first, browser TTS as fallback
       if (isBrowserAssistRef.current || !window.speechSynthesis) {
-        speakBrowser(text);
+        void speak(text);
       }
     });
 
@@ -156,6 +157,68 @@ export function useVoiceAI() {
       socket.disconnect();
     };
   }, []);
+
+  // What happens when the AI finishes talking (shared by both TTS paths)
+  function afterSpeaking() {
+    if (activeSessionRef.current) {
+      if (webrtcActiveRef.current) {
+        setOrbState("listening");
+      } else {
+        startListeningBrowser();
+      }
+    } else {
+      setOrbState("idle");
+    }
+  }
+
+  function stopAudioPlayback() {
+    if (audioRef.current) {
+      try { audioRef.current.pause(); } catch { /* ignore */ }
+      audioRef.current = null;
+    }
+  }
+
+  // ── Natural voice: Gemini TTS from the server, browser TTS as fallback ────────
+
+  async function speak(text: string) {
+    if (typeof window === "undefined") return;
+
+    if (Date.now() > serverTtsDisabledUntilRef.current) {
+      try {
+        const res = await fetch(`${getBackendUrl()}/api/tts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ text }),
+        });
+        if (res.ok) {
+          const url = URL.createObjectURL(await res.blob());
+          const audio = new Audio(url);
+          audioRef.current = audio;
+          audio.onplay = () => setOrbState("speaking");
+          audio.onended = () => {
+            URL.revokeObjectURL(url);
+            if (audioRef.current === audio) audioRef.current = null;
+            afterSpeaking();
+          };
+          audio.onerror = () => {
+            URL.revokeObjectURL(url);
+            if (audioRef.current === audio) audioRef.current = null;
+            speakBrowser(text);
+          };
+          await audio.play();
+          return;
+        }
+        // Quota/unavailable/guest — back off and use browser TTS for a while
+        serverTtsDisabledUntilRef.current =
+          Date.now() + (res.status === 401 || res.status === 403 ? 60 : 5) * 60 * 1000;
+      } catch {
+        serverTtsDisabledUntilRef.current = Date.now() + 5 * 60 * 1000;
+      }
+    }
+
+    speakBrowser(text);
+  }
 
   // ── Browser Speech Synthesis (fallback TTS, always available) ─────────────────
 
@@ -409,7 +472,7 @@ export function useVoiceAI() {
     if (orbState === "idle") {
       if (!activeSessionRef.current) {
         activeSessionRef.current = true;
-        speakBrowser(aiText || "Hello, welcome to Skyvion AI Systems. How can I assist you today?");
+        void speak(aiText || "Hello, welcome to Skyvion AI Systems. How can I assist you today?");
 
         // Attempt WebRTC in parallel — if it fails, browser speech recognition takes over
         if (WEBRTC_ENABLED && socketRef.current) {
@@ -437,6 +500,7 @@ export function useVoiceAI() {
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
+      stopAudioPlayback();
       stopListeningBrowser();
       setOrbState("idle");
     }
@@ -449,7 +513,7 @@ export function useVoiceAI() {
     isConnected,
     isBrowserAssist,
     toggleVoiceSession,
-    speak: speakBrowser,
+    speak,
     language,
     setLanguage,
     wakeWordEnabled,

@@ -9,29 +9,48 @@ const router = Router();
 // /api/conversations/mine BEFORE the admin-only router (any signed-in user).
 export const myConversationsRouter = Router();
 
+// GET /api/conversations/mine — the user's past chat threads (newest first)
 myConversationsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    // Only conversations where the user actually spoke (skips greeting-only
-    // records from before this was filtered at save time)
     const convs = await Conversation.find({ userId: req.userId, 'messages.role': 'user' })
       .sort({ createdAt: -1 })
-      .limit(5)
+      .limit(20)
       .select('messages createdAt')
       .lean();
 
-    // Oldest conversation first, capped to the last 50 messages overall
-    const messages = convs
-      .reverse()
-      .flatMap((c) =>
-        (c.messages ?? []).map((m: { role: string; content: string; timestamp?: Date }) => ({
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp ?? c.createdAt,
-        }))
-      )
-      .slice(-50);
+    const threads = convs.map((c) => {
+      const msgs = (c.messages ?? []) as Array<{ role: string; content: string }>;
+      const firstUserMsg = msgs.find((m) => m.role === 'user');
+      return {
+        _id: c._id,
+        title: (firstUserMsg?.content ?? 'Conversation').slice(0, 60),
+        createdAt: c.createdAt,
+        messageCount: msgs.length,
+      };
+    });
 
-    res.json({ success: true, data: messages });
+    res.json({ success: true, data: threads });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/conversations/mine/:id — full messages of one of the user's threads
+myConversationsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const conv = await Conversation.findOne({ _id: req.params.id, userId: req.userId })
+      .select('messages createdAt')
+      .lean();
+    if (!conv) throw new ApiError(404, 'Conversation not found');
+
+    res.json({
+      success: true,
+      data: (conv.messages ?? []).map((m: { role: string; content: string; timestamp?: Date }) => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp ?? conv.createdAt,
+      })),
+    });
   } catch (error) {
     next(error);
   }

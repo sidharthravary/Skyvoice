@@ -67,6 +67,11 @@ interface UserSession {
     timeline?: string;
   };
   messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp?: Date }>;
+  // Index into `messages` where THIS session's new content starts — anything
+  // before it is seeded history from previous conversations (context for the
+  // LLM, but never re-saved to the database).
+  persistFrom: number;
+  greeting: string;
 }
 
 const sessions:      Map<string, UserSession> = new Map();
@@ -311,13 +316,45 @@ export function setupVoicePipeline(io: Server) {
       if (config?.voiceName) voiceName = config.voiceName;
     } catch { /* ignore */ }
 
+    // ── AI memory: seed the context with the user's recent history ────────────
+    // The assistant genuinely remembers past sessions ("what did we discuss
+    // yesterday?"), while only new messages get persisted.
+    let seededMessages: UserSession['messages'] = [];
+    if (userId !== socket.id) {
+      try {
+        const recent = await Conversation.find({ userId, 'messages.role': 'user' })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .select('messages')
+          .lean();
+        seededMessages = recent
+          .reverse()
+          .flatMap((c) =>
+            ((c.messages ?? []) as Array<{ role: 'user' | 'assistant'; content: string }>).map(
+              (m) => ({ role: m.role, content: m.content })
+            )
+          )
+          .slice(-16);
+        if (seededMessages.length > 0) {
+          console.log(`[Voice Pipeline] 🧠 Seeded ${seededMessages.length} history messages for ${username}`);
+        }
+      } catch (err) {
+        console.warn('[Voice Pipeline] History seed failed:', err);
+      }
+    }
+
     sessions.set(socket.id, {
       state: 'idle',
       intent: 'general_query',
       fullName,
       bookingForm: {},
       inquiryForm: {},
-      messages: [{ role: 'assistant', content: greeting, timestamp: new Date() }],
+      messages: [
+        ...seededMessages,
+        { role: 'assistant', content: greeting, timestamp: new Date() },
+      ],
+      persistFrom: seededMessages.length,
+      greeting,
     });
 
     const useBrowserAssist = !openai;
@@ -385,6 +422,38 @@ export function setupVoicePipeline(io: Server) {
     }
 
     socket.on('text-input', (text: string) => { void handleTextInput(text); });
+
+    // "New chat": persist the current thread (if the user spoke) and start a
+    // fresh conversation context with just the greeting.
+    socket.on('reset-session', async () => {
+      const session = sessions.get(socket.id);
+      if (!session) return;
+      const uid = socketUserIds.get(socket.id) || socket.id;
+
+      const newMessages = session.messages.slice(session.persistFrom);
+      if (newMessages.some((m) => m.role === 'user')) {
+        try {
+          const sentiment = await detectSentiment(newMessages);
+          await Conversation.create({
+            userId: uid,
+            messages: newMessages,
+            intent: session.intent,
+            sentiment,
+            resolved: session.state === 'idle',
+          });
+        } catch (err) {
+          console.error('[Voice Pipeline] reset-session save failed:', err);
+        }
+      }
+
+      session.messages = [{ role: 'assistant', content: session.greeting, timestamp: new Date() }];
+      session.persistFrom = 0;
+      session.state = 'idle';
+      session.intent = 'general_query';
+      session.bookingForm = {};
+      session.inquiryForm = {};
+      socket.emit('session-reset', { greeting: session.greeting });
+    });
 
     // ── WebRTC signaling (additive — does NOT touch existing events above) ────────
 
@@ -495,19 +564,20 @@ export function setupVoicePipeline(io: Server) {
 
       const session = sessions.get(socket.id);
       const uid     = socketUserIds.get(socket.id) || socket.id;
-      // Only persist conversations where the user actually said something —
-      // page loads that just received the greeting aren't conversations.
-      if (session && !session.messages.some((m) => m.role === 'user')) {
+      // Persist only THIS session's new messages (never re-save seeded
+      // history), and only when the user actually said something.
+      const newMessages = session ? session.messages.slice(session.persistFrom) : [];
+      if (session && !newMessages.some((m) => m.role === 'user')) {
         sessions.delete(socket.id);
         socketUserIds.delete(socket.id);
         return;
       }
       if (session) {
         try {
-          const sentiment = await detectSentiment(session.messages);
+          const sentiment = await detectSentiment(newMessages);
           const savedConv = await Conversation.create({
             userId:   uid,
-            messages: session.messages,
+            messages: newMessages,
             intent:   session.intent,
             sentiment,
             resolved: session.state === 'idle',

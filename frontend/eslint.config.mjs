@@ -11,6 +11,11 @@ const eslintConfig = defineConfig([
       // fetch-in-effect patterns — surface these as warnings, not CI failures.
       "@typescript-eslint/no-explicit-any": "warn",
       "react-hooks/set-state-in-effect": "warn",
+      // The React-compiler strictness rules misfire on the imperative
+      // speech/audio plumbing in useVoiceAI (hoisted function declarations,
+      // fetch/Audio calls flagged as "render") — keep them advisory.
+      "react-hooks/purity": "warn",
+      "react-hooks/immutability": "warn",
     },
   },
   // Override default ignores of eslint-config-next.

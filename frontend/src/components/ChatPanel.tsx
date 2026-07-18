@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Bot, SendHorizonal } from "lucide-react";
+import { Bot, SendHorizonal, Plus, MessageSquare, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatAI } from "@/hooks/useChatAI";
+import { Markdown } from "@/components/Markdown";
 
 const SUGGESTIONS = [
   "What meetings are scheduled this week?",
@@ -15,14 +16,19 @@ const SUGGESTIONS = [
 // ChatGPT-style text chat backed by the SkyVoice AI pipeline.
 // `dark` matches the visitor pages; light matches the admin dashboard.
 export function ChatPanel({ dark = false }: { dark?: boolean }) {
-  const { messages, typing, isConnected, sendMessage } = useChatAI();
+  const {
+    messages, typing, isConnected, sendMessage,
+    threads, viewedThread, viewThread, backToLive, newChat,
+  } = useChatAI();
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const shownMessages = viewedThread ? viewedThread.messages : messages;
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, typing]);
+  }, [shownMessages, typing]);
 
   function submit() {
     if (!draft.trim()) return;
@@ -37,24 +43,75 @@ export function ChatPanel({ dark = false }: { dark?: boolean }) {
   const subText = dark ? "text-[#64748B]" : "text-[#94A3B8]";
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* Connection status */}
-      <div className="flex items-center gap-1.5 justify-center pb-3">
-        <span
-          className="inline-block w-[7px] h-[7px] rounded-full"
-          style={{
-            backgroundColor: isConnected ? "#22C55E" : "#EF4444",
-            boxShadow: isConnected ? "0 0 6px rgba(34,197,94,0.6)" : undefined,
-          }}
-        />
-        <span className={cn("text-xs font-medium", subText)}>
-          {isConnected ? "AI Connected" : "Connecting…"}
-        </span>
-      </div>
+    <div className="flex h-full min-h-0 gap-4">
+      {/* Thread sidebar (desktop) */}
+      {threads.length > 0 && (
+        <aside
+          className={cn(
+            "hidden md:flex flex-col w-52 flex-shrink-0 rounded-2xl border p-3 min-h-0",
+            dark ? "bg-white/4 border-white/10" : "bg-white border-[#4F7DF3]/10"
+          )}
+        >
+          <button
+            onClick={newChat}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 mb-3 rounded-xl bg-gradient-to-r from-[#4F7DF3] to-[#6FAEFF] text-white text-xs font-semibold cursor-pointer hover:shadow-[0_2px_10px_rgba(79,125,243,0.4)] transition-all"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New chat
+          </button>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
+            {threads.map((t) => (
+              <button
+                key={t._id}
+                onClick={() => viewThread(t._id)}
+                className={cn(
+                  "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer flex items-start gap-1.5",
+                  viewedThread?.id === t._id
+                    ? "bg-[#4F7DF3]/15 text-[#4F7DF3]"
+                    : dark
+                      ? "text-[#94A3B8] hover:bg-white/5"
+                      : "text-[#64748B] hover:bg-[#4F7DF3]/5"
+                )}
+              >
+                <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 opacity-60" />
+                <span className="truncate leading-snug">{t.title}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+      )}
+
+      <div className="flex flex-col flex-1 h-full min-h-0">
+      {/* Connection status / viewing banner */}
+      {viewedThread ? (
+        <button
+          onClick={backToLive}
+          className={cn(
+            "flex items-center gap-1.5 justify-center pb-3 text-xs font-medium cursor-pointer",
+            "text-[#4F7DF3] hover:underline"
+          )}
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Viewing a past conversation — back to current chat
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5 justify-center pb-3">
+          <span
+            className="inline-block w-[7px] h-[7px] rounded-full"
+            style={{
+              backgroundColor: isConnected ? "#22C55E" : "#EF4444",
+              boxShadow: isConnected ? "0 0 6px rgba(34,197,94,0.6)" : undefined,
+            }}
+          />
+          <span className={cn("text-xs font-medium", subText)}>
+            {isConnected ? "AI Connected" : "Connecting…"}
+          </span>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-1 space-y-3">
-        {messages.map((m) =>
+        {shownMessages.map((m) =>
           m.role === "user" ? (
             <div key={m.id} className="flex justify-end">
               <div className="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-br-md text-sm leading-relaxed bg-gradient-to-r from-[#4F7DF3] to-[#6FAEFF] text-white shadow-[0_2px_8px_rgba(79,125,243,0.3)]">
@@ -68,11 +125,11 @@ export function ChatPanel({ dark = false }: { dark?: boolean }) {
               </div>
               <div
                 className={cn(
-                  "max-w-[80%] px-4 py-2.5 rounded-2xl rounded-tl-md text-sm leading-relaxed whitespace-pre-wrap",
+                  "max-w-[80%] px-4 py-2.5 rounded-2xl rounded-tl-md text-sm leading-relaxed",
                   assistantBubble
                 )}
               >
-                {m.text}
+                <Markdown text={m.text} />
               </div>
             </div>
           )
@@ -98,7 +155,7 @@ export function ChatPanel({ dark = false }: { dark?: boolean }) {
         )}
 
         {/* Suggestions when the conversation is fresh */}
-        {messages.length <= 1 && !typing && (
+        {!viewedThread && messages.length <= 1 && !typing && (
           <div className="flex flex-wrap gap-2 pt-2 pl-9">
             {SUGGESTIONS.map((s) => (
               <button
@@ -163,6 +220,7 @@ export function ChatPanel({ dark = false }: { dark?: boolean }) {
       <p className={cn("text-[10px] text-center pt-2", subText)}>
         Answers come from the SkyVoice knowledge base and live appointment data.
       </p>
+      </div>
     </div>
   );
 }
