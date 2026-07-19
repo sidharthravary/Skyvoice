@@ -12,8 +12,9 @@ import { AIConfig } from '../models/aiConfig.model';
 import { sendEmail, getProjectInquiryTemplate, getBookingConfirmationTemplate } from './emailService';
 import {
   analyzeWithGemini, generateGeminiResponse, generateGeminiResponseStream,
-  generateGeminiJson, isGeminiReady
+  generateGeminiJson, isGeminiReady, transcribeAudioWav
 } from './geminiService';
+import { pcmToWav } from './ttsService';
 import {
   trackVoiceQuery, trackBooking, trackProjectUpdate
 } from './userSessionService';
@@ -391,6 +392,50 @@ export function setupVoicePipeline(io: Server) {
 
     socket.on('stop-recording', async () => {
       if (useBrowserAssist) return;
+    });
+
+    // ── Server-side voice capture (phones without the Web Speech API) ─────────
+    // The client streams 16kHz mono PCM16 chunks; on voice-end we wrap them in
+    // a WAV and let Gemini transcribe, then run the normal text pipeline.
+    let voiceChunks: Buffer[] = [];
+
+    socket.on('voice-start', () => {
+      voiceChunks = [];
+    });
+
+    socket.on('voice-chunk', (chunk: ArrayBuffer | Buffer) => {
+      if (voiceChunks.length < 400) {
+        voiceChunks.push(Buffer.from(chunk as ArrayBuffer)); // ~400 × 8KB ≈ 3MB cap
+      }
+    });
+
+    socket.on('voice-cancel', () => {
+      voiceChunks = [];
+    });
+
+    socket.on('voice-end', async (meta: { sampleRate?: number; language?: string } = {}) => {
+      const pcm = Buffer.concat(voiceChunks);
+      voiceChunks = [];
+      if (pcm.length < 8000) { // under ~0.25s of audio — nothing to transcribe
+        socket.emit('status', 'idle');
+        return;
+      }
+      socket.emit('status', 'thinking');
+      try {
+        const wav = pcmToWav(pcm, meta.sampleRate || 16000, 1);
+        const text = await transcribeAudioWav(wav, meta.language);
+        console.log(`[Voice Pipeline] 🎙️ Server STT (${(pcm.length / 32000).toFixed(1)}s audio): "${text}"`);
+        if (!text) {
+          socket.emit('ai-response-text', "I didn't catch that — could you say it again?");
+          socket.emit('status', 'speaking');
+          return;
+        }
+        await handleTextInput(text);
+      } catch (err) {
+        console.error('[Voice Pipeline] Server STT failed:', err);
+        socket.emit('ai-response-text', "I couldn't process that audio. Please try again.");
+        socket.emit('status', 'idle');
+      }
     });
 
     // ── Shared text-processing helper (used by text-input AND WebRTC STT bridge) ──

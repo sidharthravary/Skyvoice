@@ -19,7 +19,7 @@ export function isTtsAvailable(): boolean {
 }
 
 // Gemini returns raw 16-bit PCM at 24kHz; browsers need a WAV header.
-function pcmToWav(pcm: Buffer, sampleRate = 24000, channels = 1): Buffer {
+export function pcmToWav(pcm: Buffer, sampleRate = 24000, channels = 1): Buffer {
   const header = Buffer.alloc(44);
   const byteRate = sampleRate * channels * 2;
   header.write('RIFF', 0);

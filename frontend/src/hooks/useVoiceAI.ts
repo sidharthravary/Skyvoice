@@ -164,7 +164,7 @@ export function useVoiceAI() {
       if (webrtcActiveRef.current) {
         setOrbState("listening");
       } else {
-        startListeningBrowser();
+        startListening();
       }
     } else {
       setOrbState("idle");
@@ -253,7 +253,7 @@ export function useVoiceAI() {
             // WebRTC mic is always on — just flip orb to listening
             setOrbState("listening");
           } else {
-            startListeningBrowser();
+            startListening();
           }
         } else {
           setOrbState("idle");
@@ -272,7 +272,7 @@ export function useVoiceAI() {
               if (webrtcActiveRef.current) {
                 setOrbState("listening");
               } else {
-                startListeningBrowser();
+                startListening();
               }
             } else {
               setOrbState("idle");
@@ -285,7 +285,7 @@ export function useVoiceAI() {
             if (webrtcActiveRef.current) {
               setOrbState("listening");
             } else {
-              startListeningBrowser();
+              startListening();
             }
           } else {
             setOrbState("idle");
@@ -337,6 +337,11 @@ export function useVoiceAI() {
 
     recognition.onerror = (err: any) => {
       console.error("[useVoiceAI] Speech Recognition error:", err);
+      if (err?.error === "network" || err?.error === "service-not-allowed") {
+        // Web Speech broken on this device — use server-side transcription
+        void startListeningServer();
+        return;
+      }
       setOrbState("idle");
     };
 
@@ -353,6 +358,103 @@ export function useVoiceAI() {
         console.warn("[useVoiceAI] Error stopping recognition:", e);
       }
     }
+  }
+
+  // ── Server-side capture: works on ANY phone browser with a microphone ────────
+  // Streams 16kHz PCM over the socket; the server transcribes with Gemini.
+  // Used automatically when the Web Speech API is missing or fails.
+
+  function hasWebSpeech(): boolean {
+    return (
+      typeof window !== "undefined" &&
+      !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+    );
+  }
+
+  const serverCaptureRef = useRef<{
+    ctx: AudioContext;
+    stream: MediaStream;
+    proc: ScriptProcessorNode;
+  } | null>(null);
+
+  async function startListeningServer() {
+    if (typeof window === "undefined" || serverCaptureRef.current) return;
+    stopWakeListener();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const proc = ctx.createScriptProcessor(4096, 1, 1);
+      const inputRate = ctx.sampleRate;
+      let voicedMs = 0;
+      let silenceMs = 0;
+      let totalMs = 0;
+
+      socketRef.current?.emit("voice-start");
+
+      proc.onaudioprocess = (e) => {
+        const data = e.inputBuffer.getChannelData(0);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length);
+        const frameMs = (data.length / inputRate) * 1000;
+        totalMs += frameMs;
+        if (rms > 0.015) {
+          voicedMs += frameMs;
+          silenceMs = 0;
+        } else {
+          silenceMs += frameMs;
+        }
+
+        // Downsample to 16kHz mono PCM16 and stream it
+        const ratio = inputRate / 16000;
+        const outLen = Math.floor(data.length / ratio);
+        const out = new Int16Array(outLen);
+        for (let i = 0; i < outLen; i++) {
+          const v = Math.max(-1, Math.min(1, data[Math.floor(i * ratio)]));
+          out[i] = v * 0x7fff;
+        }
+        socketRef.current?.emit("voice-chunk", out.buffer);
+
+        // Auto-stop: spoke, then ~1.4s of silence — or 15s hard cap
+        if ((voicedMs > 300 && silenceMs > 1400) || totalMs > 15000) {
+          stopListeningServer(voicedMs > 300);
+        }
+      };
+
+      source.connect(proc);
+      proc.connect(ctx.destination);
+      serverCaptureRef.current = { ctx, stream, proc };
+      setOrbState("listening");
+      setTranscript("");
+    } catch (err) {
+      console.error("[useVoiceAI] Microphone unavailable:", err);
+      setOrbState("idle");
+    }
+  }
+
+  function stopListeningServer(send: boolean) {
+    const cap = serverCaptureRef.current;
+    if (!cap) return;
+    serverCaptureRef.current = null;
+    try {
+      cap.proc.disconnect();
+      cap.stream.getTracks().forEach((t) => t.stop());
+      void cap.ctx.close();
+    } catch { /* ignore */ }
+    if (send) {
+      socketRef.current?.emit("voice-end", { sampleRate: 16000, language: languageRef.current });
+      setOrbState("thinking");
+    } else {
+      socketRef.current?.emit("voice-cancel");
+      setOrbState("idle");
+    }
+  }
+
+  // Route to whichever speech input this device supports
+  function startListening() {
+    if (hasWebSpeech()) startListeningBrowser();
+    else void startListeningServer();
   }
 
   // ── Wake word ("Hey SkyVoice") — background listener while idle ───────────────
@@ -484,7 +586,7 @@ export function useVoiceAI() {
         if (webrtcActiveRef.current) {
           setOrbState("listening"); // mic already on via WebRTC
         } else {
-          startListeningBrowser();
+          startListening();
         }
       }
     } else {
@@ -502,6 +604,7 @@ export function useVoiceAI() {
       }
       stopAudioPlayback();
       stopListeningBrowser();
+      stopListeningServer(false);
       setOrbState("idle");
     }
   };

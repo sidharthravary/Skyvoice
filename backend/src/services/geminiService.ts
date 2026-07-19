@@ -84,6 +84,25 @@ async function callWithRetry(fn: () => Promise<string>, retries = 2, delayMs = 8
   throw new Error('Gemini: max retries exceeded');
 }
 
+// Server-side speech-to-text: Gemini transcribes a WAV recording. Used by the
+// phone voice path, where browsers lack the Web Speech API.
+export async function transcribeAudioWav(wav: Buffer, languageHint?: string): Promise<string> {
+  const model = getModel();
+  if (!model) throw new Error('Gemini not configured');
+  const result = await callWithRetry(async () => {
+    const res = await model.generateContent([
+      { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } },
+      {
+        text:
+          'Transcribe this audio recording exactly as spoken. Reply with ONLY the transcribed words — no commentary, no quotes. If there is no intelligible speech, reply with exactly: [no speech]' +
+          (languageHint ? ` The speaker may be speaking ${languageHint}.` : ''),
+      },
+    ]);
+    return res.response.text().trim();
+  });
+  return result === '[no speech]' ? '' : result;
+}
+
 export async function generateGeminiResponse(prompt: string, context: string): Promise<string> {
   const model = getModel();
   if (!model) throw new Error('Gemini not configured');
