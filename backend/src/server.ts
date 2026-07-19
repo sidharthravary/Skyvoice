@@ -32,6 +32,8 @@ import configRoutes from './routes/config';
 import monitoringRoutes from './routes/monitoring';
 import authRoutes from './routes/auth';
 import ttsRoutes from './routes/tts';
+import emailRoutes from './routes/email';
+import { startReminderScheduler } from './services/reminderService';
 import userRoutes from './routes/users';
 import { setupVoicePipeline } from './services/voicePipeline';
 import { initMediasoup } from './webrtc/mediasoupServer';
@@ -101,6 +103,7 @@ app.use('/api/analytics',     adminOnly, analyticsRoutes);
 app.use('/api/calendar',      adminOnly, calendarRoutes);
 app.use('/api/config',        configRoutes); // GET public (voice greeting); writes gated in-route
 app.use('/api/tts',           ttsRoutes);   // natural voice (auth in-route)
+app.use('/api/email',         emailRoutes); // status + test send (admin, in-route)
 app.use('/api/monitoring',    adminOnly, monitoringRoutes);
 
 // ── Socket.io general namespace ──
@@ -121,6 +124,7 @@ io.of('/monitoring').on('connection', (socket) => {
 
 setupVoicePipeline(io);
 setIoInstance(io); // real WS client counts for /api/monitoring
+startReminderScheduler(); // day-before booking reminders (dormant until email is enabled)
 
 // ── Error Handler (must be last) ──
 app.use(errorHandler);

@@ -9,6 +9,25 @@ const router = Router();
 
 const statusEnum = z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no-show']);
 
+async function notifyCancellation(appt: {
+  userId: string;
+  name: string;
+  visitorName?: string;
+  date: Date;
+  time: string;
+}): Promise<void> {
+  const { User } = await import('../models/user.model');
+  const { sendEmail, getBookingCancellationTemplate } = await import('../services/emailService');
+  const user = await User.findById(appt.userId).select('email').catch(() => null);
+  if (!user?.email) return;
+  const dateStr = new Date(appt.date).toDateString();
+  await sendEmail({
+    to: user.email,
+    subject: `Appointment cancelled — ${dateStr} at ${appt.time}`,
+    html: getBookingCancellationTemplate(appt.visitorName || appt.name, dateStr, appt.time),
+  });
+}
+
 const createAppointmentSchema = z.object({
   userId: z.string().trim().min(1).max(64),
   visitorName: z.string().trim().max(100).optional(),
@@ -116,6 +135,13 @@ router.patch('/:id', validateBody(updateAppointmentSchema), async (req: Request,
       { $set: req.body },
       { new: true, runValidators: true }
     );
+
+    // Cancellation email (non-blocking; no-op until EMAIL_ENABLED is on)
+    if (appointment && req.body.status === 'cancelled' && existing.status !== 'cancelled') {
+      notifyCancellation(appointment).catch((err) =>
+        console.error('[Email] Cancellation notice failed:', err)
+      );
+    }
 
     res.json({ success: true, data: appointment });
   } catch (error) {

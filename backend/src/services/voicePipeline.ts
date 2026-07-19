@@ -9,7 +9,7 @@ import { Appointment } from '../models/appointment.model';
 import { KnowledgeBase } from '../models/knowledgeBase.model';
 import { OpenAI } from 'openai';
 import { AIConfig } from '../models/aiConfig.model';
-import { sendEmail, getProjectInquiryTemplate } from './emailService';
+import { sendEmail, getProjectInquiryTemplate, getBookingConfirmationTemplate } from './emailService';
 import {
   analyzeWithGemini, generateGeminiResponse, generateGeminiResponseStream,
   generateGeminiJson, isGeminiReady
@@ -101,6 +101,18 @@ function decodeSocketAuth(socket: Socket): { userId: string; username: string; f
   return { userId: socket.id, username, fullName };
 }
 
+// Send a booking confirmation to the booker's registered email address
+async function sendBookingEmail(userId: string, name: string, date: string, time: string): Promise<void> {
+  const { User } = await import('../models/user.model');
+  const user = await User.findById(userId).select('email').catch(() => null);
+  if (!user?.email) return; // guests / accounts without email
+  await sendEmail({
+    to: user.email,
+    subject: `Appointment confirmed — ${date} at ${time}`,
+    html: getBookingConfirmationTemplate(name, date, time, 'UTC'),
+  });
+}
+
 // ── Booking — Atlas save with conflict check and post-save verify ──────────────
 
 async function persistAppointment(params: {
@@ -159,6 +171,11 @@ async function persistAppointment(params: {
     // Track in user session (non-blocking)
     trackBooking(params.userId, appointment).catch(err =>
       console.error('[trackBooking] Error:', err)
+    );
+
+    // Confirmation email (non-blocking; no-op until EMAIL_ENABLED is on)
+    sendBookingEmail(params.userId, params.visitorName, params.date, params.time).catch(err =>
+      console.error('[Email] Booking confirmation failed:', err)
     );
 
     return {
